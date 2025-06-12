@@ -4,32 +4,54 @@ from datetime import datetime
 import uuid
 
 
+
 ## this is what we are returning
 ## These are just samples of how stuff can look like, we should definitely reevaluate and refactor them one by one.
 
 # Player Schemas
-class Player(BaseModel):
-    money: Optional[int] = 0
+
+class PlayerBase(BaseModel):
+    name: Optional[str] = None
+    picture: Optional[int] = 0
+
+class Player(PlayerBase):
     player_id: uuid.UUID
-
-
-# Recipe Schemas
-class RecipeBase(BaseModel):
-    potion_name: str
-    recipe_data: Optional[str] = None
-    difficulty_level: Optional[int] = 1
-
-class RecipeCreate(RecipeBase):
+    money: Optional[int] = 0
+    class Config:
+        orm_mode = True
+class PlayerCreate(PlayerBase):
     pass
 
-class Recipe(RecipeBase):
-    id: int
-    recipe_id: uuid.UUID
-    
+# Grimoire Schemas
+class Grimoire(BaseModel):
+    recipe_ids: List[int]
     class Config:
-        from_attributes = True
+        orm_mode = True
 
-# Session Schemas
+# Recipe/Potion Schemas
+class PotionBase(BaseModel):
+    id: int
+    potion_name: str
+    potion_picture: Optional[str]
+    class Config:
+        orm_mode = True
+
+
+
+class Recipe (PotionBase):
+    # TODO: maybe 2 references to flowers and potions (see models)
+    recipe_data: Optional[str] = None
+    # TODO: different sequences to craft (see models)
+
+#Inventory
+class InventoryItem(BaseModel):
+    potion_id: int
+    amount: int
+
+
+class Inventory(BaseModel):
+    potions: List[InventoryItem]
+#Session Schemas
 class SessionBase(BaseModel):
     is_active: Optional[bool] = True
 
@@ -46,6 +68,3 @@ class Session(SessionBase):
     class Config:
         from_attributes = True
 
-# Grimoire Schemas
-class Grimoire(BaseModel):
-    recipe_ids: List[str]
