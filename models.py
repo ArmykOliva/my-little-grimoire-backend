@@ -8,7 +8,9 @@ from database import Base
 import uuid
 from datetime import datetime
 from sqlalchemy.types import JSON
-#TODO: check, if in all relationship "ondelete" is defined correctly
+
+
+#TODO: check cascade for all relationships
 
 #Many-to-many table: grimoire <-> recipe
 grimoire_recipes = Table(
@@ -56,7 +58,7 @@ class Player(Base):
     profile_picture = Column(Integer, default=0)
 
     # Player stats
-    money = Column(Integer, default=0)
+    money = Column(Integer, default=100)
 
     """ Other values to consider
     level = Column(Integer, default=1)
@@ -74,6 +76,8 @@ class Player(Base):
     session = relationship("Session", back_populates="players", uselist=False,  passive_deletes=True)
     inventory_items = relationship("InventoryItem", back_populates="player", cascade="all, delete-orphan")
     grimoire = relationship("Grimoire", back_populates="player", uselist=False, cascade="all, delete-orphan")
+    decorations = relationship("DecorationPlayer", back_populates="player", cascade="all, delete-orphan")
+
 class Grimoire(Base):
     __tablename__ = "grimoires"
     id = Column(Integer, primary_key=True, index=True)
@@ -152,3 +156,26 @@ class Session(Base):
         "Flower",
         secondary=session_flower_association
     )
+
+
+#Decorations
+class Decoration(Base):
+    __tablename__ = "decorations"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    allowed_position = Column(Integer, nullable=False)  # bitmask like 0b10101
+    cost = Column(Integer, nullable=False)
+
+class DecorationPlayer(Base):
+    __tablename__ = "decoraion_player"
+
+    id = Column(Integer, primary_key=True)
+    player_id = Column(UUID(as_uuid=True), ForeignKey("players.player_id", ondelete="CASCADE"), nullable=False)
+    decoration_id = Column(Integer, ForeignKey("decorations.id", ondelete="CASCADE"), nullable=False)
+
+    used = Column(Boolean, default=False)
+    position = Column(Integer)
+
+    # Relationships (only back to player, not visible from decoration)
+    player = relationship("Player", back_populates="decorations")
+    decoration = relationship("Decoration")

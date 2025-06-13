@@ -115,14 +115,14 @@ async def get_inventory(player_id: uuid.UUID, db: Session = Depends(get_db)):
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # inventory = [
-    #     schemas.InventoryItem(
-    #         potion_id=item.potion_id,
-    #         amount=item.amount
-    #     )
-    #     for item in player.inventory_items
-    # ]
-    return schemas.Inventory(potions = player.inventory_items)
+    inventory = [
+        schemas.InventoryItem(
+            potion=schemas.PotionBase(id = item.potion.id, potion_name = item.potion.potion_name),
+            amount=item.amount
+        )
+        for item in player.inventory_items
+    ]
+    return schemas.Inventory(potions = inventory)
 
 @app.post("/players/{player_id}/inventory/add/{potion_id}")
 async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Session = Depends(get_db)):
@@ -264,6 +264,7 @@ def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
 
 
     return schemas.SessionJoined(
+        recipe = session.recipe,
         color_id=assigned_color,
         code=data.code
     )
@@ -362,7 +363,7 @@ def collect_flower(
 def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player or not player.session_id:
-        raise HTTPException(status_code=403, detail="Not part of this session")
+        raise HTTPException(status_code=404, detail="Player not in a session")
 
     # get session
     session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
@@ -409,3 +410,32 @@ def clear_stale_sessions(db: Session = Depends(get_db)):
 def get_all_sessions(db: Session = Depends(get_db)):
     sessions = db.query(models.Session).all()
     return sessions
+
+
+# Decorations
+@app.post("/players/{player_id}/buy_decoration", response_model=schemas.DecorationInventory)
+def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
+    decoration = db.query(models.Decoration).get(decoration_id)
+    if not decoration:
+        raise HTTPException(404, "Decoration not found")
+
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        HTTPException(status_code=404, detail="Player not found")
+
+    if player.money < decoration.cost:
+        raise HTTPException(400, "Insufficient funds")
+
+    # Check if already owns
+    already_owned = db.query(models.DecorationPlayer).filter_by(player_id=player_id, decoration_id=decoration_id).first()
+    if already_owned:
+        raise HTTPException(400, "Already owned")
+
+    player.money -= decoration.cost
+    player_decoration = models.DecorationPlayer(player_id=player_id, decoration_id=decoration_id)
+    db.add(player_decoration)
+    db.commit()
+
+    inventory_decorations = player.decorations
+
+    return schemas.DecorationInventory(decorations = [schemas.DecorationPlayer(used = d.used, position = d.position, id = d.decoration_id, name = d.decoration.name, allowed_position = d.decoration.allowed_position) for d in inventory_decorations])

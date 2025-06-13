@@ -50,6 +50,8 @@ class Recipe (PotionBase):
     required_potions: List['Recipe'] = []
     required_flowers: List[Flower] = []
     # TODO: different sequences to craft (see models)
+    class Config:
+        orm_mode = True
 Recipe.model_rebuild()
 
 # Grimoire Schemas
@@ -63,10 +65,13 @@ class Grimoire(BaseModel):
 class InventoryItem(BaseModel):
     potion: PotionBase
     amount: int
-
+    class Config:
+        orm_mode = True
 
 class Inventory(BaseModel):
     potions: List[InventoryItem]
+    class Config:
+        orm_mode = True
 #Session Schemas
 class SessionBase(BaseModel):
     recipe: Recipe
@@ -85,6 +90,7 @@ class SessionJoin(BaseModel):
     code: str
 class SessionJoined(BaseModel):
     #session_id: uuid.UUID
+    recipe: Recipe
     color_id: str
     #5-letter-string
     code: str
@@ -114,5 +120,33 @@ class DebugSessionInfo(BaseModel):
     players: List[PlayerSessionInfo]
     started_at: datetime
 
+    class Config:
+        orm_mode = True
+
+# Decorations
+
+
+class DecorationBase(BaseModel):
+    id: int
+    name: str
+    allowed_position: int  # bitmask (e.g., 0b10101 means pos 0, 2, 4 allowed)
+
+    class Config:
+        orm_mode = True
+
+# Shop decorations
+class DecorationShop(DecorationBase):
+    cost: int
+
+# Player's owned decoration
+class DecorationPlayer(DecorationBase):
+    used: bool
+    position: Optional[int] = None  # Position from 0 to 4
+    class Config:
+        orm_mode = True
+
+# Player's entire decoration inventory
+class DecorationInventory(BaseModel):
+    decorations: List[DecorationPlayer]
     class Config:
         orm_mode = True

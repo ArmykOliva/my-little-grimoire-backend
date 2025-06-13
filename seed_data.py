@@ -9,8 +9,21 @@ import models
 
 def create_sample_data():
     db = SessionLocal()
-    
     try:
+        sample_decorations = [
+            {"id": 1, "name": "Wooden Fence", "allowed_position": 0b11111, "cost": 50},
+            {"id": 2, "name": "Crystal Fountain", "allowed_position": 0b00100, "cost": 10},
+            {"id": 3, "name": "Enchanted Tree", "allowed_position": 0b11000, "cost": 150},
+            {"id": 4, "name": "Mystic Stone", "allowed_position": 0b00011, "cost": 10},
+            {"id": 5, "name": "Golden Bench", "allowed_position": 0b10101, "cost": 10},
+        ]
+
+        for decoration_data in sample_decorations:
+            decoration = models.Decoration(**decoration_data)
+            db.add(decoration)
+
+        db.commit()
+        print("Sample decorations added successfully")
         # Create sample flowers
         sample_flowers = [
             {"color_id": "red", "flower_name": "Crimson Rose", "flower_rarity": "common"},
@@ -135,9 +148,8 @@ def create_sample_data():
         # Show sample player UUID for testing
         sample_player = db.query(models.Player).first()
         if sample_player:
-            print(f"\nSample player UUID for testing: {sample_player.player_id}")
             print("You can use this UUID to test the endpoints!")
-        
+            print(f"\nSample player UUID for testing: {sample_player.player_id}")
     except Exception as e:
         print(f"Error creating sample data: {e}")
         db.rollback()
