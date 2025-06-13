@@ -70,7 +70,7 @@ def create_sample_data():
             db.commit()
         
         # Create a sample player
-        existing_player = db.query(models.Player).first()
+        existing_player = db.query(models.Player).filter(models.Player.name == "Player").first()
         if not existing_player:
             player = models.Player(name="Player")
             db.add(player)
@@ -84,6 +84,33 @@ def create_sample_data():
             db.commit()
             db.refresh(player)
             print(f"Created sample player with UUID: {player.player_id}")
+        existing_player = db.query(models.Player).filter(models.Player.name == "Alex").first()
+        if not existing_player:
+            player = models.Player(name="Alex")
+            db.add(player)
+            db.flush()
+
+            # Create grimoire for the player
+            grimoire = models.Grimoire(player=player)
+            db.add(grimoire)
+
+            db.commit()
+            db.refresh(player)
+            print(f"Created sample player with UUID: {player.player_id}")
+
+            existing_player = db.query(models.Player).filter(models.Player.name == "Krystof").first()
+            if not existing_player:
+                player = models.Player(name="Krystof")
+                db.add(player)
+                db.flush()
+
+                # Create grimoire for the player
+                grimoire = models.Grimoire(player=player)
+                db.add(grimoire)
+
+                db.commit()
+                db.refresh(player)
+                print(f"Created sample player with UUID: {player.player_id}")
         db.commit()
         print("Sample data creation completed!")
         

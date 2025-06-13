@@ -84,9 +84,8 @@ class SessionJoin(BaseModel):
     lng:str
     code: str
 class SessionJoined(BaseModel):
-    session_id: uuid.UUID
+    #session_id: uuid.UUID
     color_id: str
-
     #5-letter-string
     code: str
 
@@ -95,5 +94,25 @@ class SessionJoined(BaseModel):
 class SessionInfo(SessionBase):
     flowers_collected: List[Flower]
     status: int
+    class Config:
+        orm_mode = True
+
+
+# for debugging
+class PlayerSessionInfo(BaseModel):
+    player_id: uuid.UUID
+    name: str
+    shears_color: Optional[str]
+
+    class Config:
+        orm_mode = True
+
+class DebugSessionInfo(BaseModel):
+    session_id: uuid.UUID
+    recipe: Recipe
+    status: int
+    players: List[PlayerSessionInfo]
+    started_at: datetime
+
     class Config:
         orm_mode = True

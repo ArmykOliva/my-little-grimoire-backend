@@ -7,7 +7,8 @@ import utils
 from database import SessionLocal, engine, get_db
 import uuid
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
+
 # Create tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -174,12 +175,29 @@ def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
     if player.session_id:
         raise HTTPException(status_code=400, detail="Player already in a session")
 
-    #TODO: check if recipe is unlocked by player
+
     recipe = db.query(models.Recipe).filter(models.Recipe.id == data.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    #TODO: check if player has all potions needed
+    # Check if player has a grimoire
+    if not player.grimoire:
+        raise HTTPException(status_code=400, detail="Player has no grimoire")
+
+    # Check if the recipe is in the player's unlocked recipes
+    if recipe not in player.grimoire.unlocked_recipes:
+        raise HTTPException(status_code=403, detail="Recipe is not unlocked by this player")
+
+
+    #TODO: what do we do, when player who join don't have potions?
+    # Should the potions be deleted from player's inventory?
+    # Save init player?
+
+    # player_potion_ids = {item.potion_id for item in player.inventory_items}
+    # required_potion_ids = {p.id for p in recipe.required_potions}
+    # missing = required_potion_ids - player_potion_ids
+    # if missing:
+    #     raise HTTPException(status_code=400, detail="Player is missing required potions to start this recipe")
 
     #Extract flower color_ids from required flowers
     available_colors = available_colors = list({flower.color_id for flower in recipe.required_flowers})
@@ -204,14 +222,13 @@ def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
     db.add(new_session)
     db.flush()
 
-    # TODO: update player on client side, alternatively: return player
+    # TODO: update player on client side?
     player.session_id = new_session.session_id
     player.shears_color = assigned_color
 
     db.commit()
 
     return schemas.SessionJoined(
-        session_id=new_session.session_id,
         color_id=assigned_color,
         code=join_code
     )
@@ -247,7 +264,6 @@ def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
 
 
     return schemas.SessionJoined(
-        session_id=session.session_id,
         color_id=assigned_color,
         code=data.code
     )
@@ -273,7 +289,7 @@ def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
 
 #TODO: flower recognition, receiving picture from the client
 #Right now: mocked up with flower_ids
-@app.post("/session/collect_flower", response_model=schemas.SessionInfo)
+@app.post("/session/collect_flower", response_model=Optional[schemas.SessionInfo])
 def collect_flower(
     flower_id: int,
     player_id: uuid.UUID,
@@ -286,10 +302,21 @@ def collect_flower(
         raise HTTPException(status_code=404, detail="Player not in a session")
 
     # get session
-    session = player.session
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+
+    if session.status == 1:
+        player.session_id = None
+        player.shears_color = None
+        db.commit()
+        # Check if any players remain in session
+        remaining_players = session.players
+        if not remaining_players:
+            db.delete(session)
+            db.commit()
+        return None
     flower = db.query(models.Flower).filter(models.Flower.id == flower_id).first()
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")
@@ -313,6 +340,16 @@ def collect_flower(
     collected_ids = {f.id for f in session.flowers_collected}
     if required_ids.issubset(collected_ids):
         session.status = 1  # Complete
+        player.session_id = None
+        player.shears_color = None
+        db.commit()
+
+        # Check if any players remain in session
+        remaining_players = session.players
+        if not remaining_players:
+            db.delete(session)
+            db.commit()
+        return None
 
     db.commit()
     db.refresh(session)
@@ -321,13 +358,14 @@ def collect_flower(
 
 
 
-@app.get("/session/info/{session_id}", response_model=Optional[schemas.SessionInfo])
-def session_info(player_id: uuid.UUID, session_id: uuid.UUID, db: Session = Depends(get_db)):
+@app.get("/session/info", response_model=Optional[schemas.SessionInfo])
+def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
-    if not player or player.session_id != session_id:
+    if not player or not player.session_id:
         raise HTTPException(status_code=403, detail="Not part of this session")
 
-    session = db.query(models.Session).filter(models.Session.session_id == session_id).first()
+    # get session
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -345,6 +383,29 @@ def session_info(player_id: uuid.UUID, session_id: uuid.UUID, db: Session = Depe
         return None
     return session
 
-#TODO: clean sessions (based on creation_time)
+#clean sessions (based on creation_time)
 
-#TODO: get all sessions (for debugging)
+def clear_stale_sessions(db: Session = Depends(get_db)):
+    cutoff = datetime.now() - timedelta(days=1)
+
+    # Fetch all sessions (you could optimize this by filtering in SQL if needed)
+    sessions = db.query(models.Session).all()
+    removed_count = 0
+
+    for session in sessions:
+        is_old = session.started_at < cutoff
+        has_no_players = not session.players or len(session.players) == 0
+
+        if is_old or has_no_players:
+            db.delete(session)
+            removed_count += 1
+
+    db.commit()
+    return removed_count
+
+
+#get all sessions (for debugging)
+@app.get("/debug/sessions", response_model=List[schemas.DebugSessionInfo])
+def get_all_sessions(db: Session = Depends(get_db)):
+    sessions = db.query(models.Session).all()
+    return sessions
