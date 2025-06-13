@@ -12,51 +12,62 @@ def create_sample_data():
     
     try:
         # Create sample flowers
-        # sample_flowers = [
-        #     {"color_id": "red", "name": "Crimson Rose", "rarity": "common"},
-        #     {"color_id": "blue", "name": "Azure Lily", "rarity": "uncommon"},
-        #     {"color_id": "purple", "name": "Mystic Violet", "rarity": "rare"},
-        #     {"color_id": "gold", "name": "Golden Sunflower", "rarity": "legendary"},
-        #     {"color_id": "green", "name": "Forest Herb", "rarity": "common"},
-        # ]
-        
-        # for flower_data in sample_flowers:
-        #     # Check if flower already exists
-        #     existing = db.query(models.Flower).filter(
-        #         models.Flower.color_id == flower_data["color_id"]
-        #     ).first()
-        #
-        #     if not existing:
-        #         flower = models.Flower(**flower_data)
-        #         db.add(flower)
-        #         print(f"Created flower: {flower_data['name']}")
-        #
-        # Create sample recipes
-        sample_recipes = [
-            {
-                "potion_name": "Healing Potion",
-                "recipe_data": '{"ingredients": ["red", "green"], "steps": ["mix", "boil"]}',
-            },
-            {
-                "potion_name": "Mana Potion",
-                "recipe_data": '{"ingredients": ["blue", "purple"], "steps": ["distill", "enchant"]}',
-            },
-            {
-                "potion_name": "Legendary Elixir",
-                "recipe_data": '{"ingredients": ["gold", "purple", "blue"], "steps": ["prepare", "mix", "concentrate", "finalize"]}',
-            },
+        sample_flowers = [
+            {"color_id": "red", "flower_name": "Crimson Rose", "flower_rarity": "common"},
+            {"color_id": "blue", "flower_name": "Azure Lily", "flower_rarity": "uncommon"},
+            {"color_id": "purple", "flower_name": "Mystic Violet", "flower_rarity": "rare"},
+            {"color_id": "gold", "flower_name": "Golden Sunflower", "flower_rarity": "legendary"},
+            {"color_id": "green", "flower_name": "Forest Herb", "flower_rarity": "common"},
         ]
-        
-        for recipe_data in sample_recipes:
-            # Check if recipe already exists
-            existing = db.query(models.Recipe).filter(
-                models.Recipe.potion_name == recipe_data["potion_name"]
-            ).first()
-            
-            if not existing:
-                recipe = models.Recipe(**recipe_data)
-                db.add(recipe)
-                print(f"Created recipe: {recipe_data['potion_name']}")
+
+        flower_map = {}
+        for flower_data in sample_flowers:
+            flower = db.query(models.Flower).filter_by(flower_name=flower_data["flower_name"]).first()
+            if not flower:
+                flower = models.Flower(**flower_data)
+                db.add(flower)
+                db.commit()
+            flower_map[flower_data["flower_name"]] = flower
+        # Create sample recipes
+
+        healing_potion = db.query(models.Recipe).filter_by(potion_name="Healing Potion").first()
+        if not healing_potion:
+            healing_potion = models.Recipe(
+                potion_name="Healing Potion",
+                required_flowers=[
+                    flower_map["Crimson Rose"],
+                    flower_map["Forest Herb"]
+                ]
+            )
+            db.add(healing_potion)
+            db.commit()
+
+        mana_potion = db.query(models.Recipe).filter_by(potion_name="Mana Potion").first()
+        if not mana_potion:
+            mana_potion = models.Recipe(
+                potion_name="Mana Potion",
+                required_flowers=[
+                    flower_map["Azure Lily"],
+                    flower_map["Mystic Violet"]
+                ]
+            )
+            db.add(mana_potion)
+            db.commit()
+
+        legendary_elixir = db.query(models.Recipe).filter_by(potion_name="Legendary Elixir").first()
+        if not legendary_elixir:
+            legendary_elixir = models.Recipe(
+                potion_name="Legendary Elixir",
+                required_flowers=[
+                    flower_map["Golden Sunflower"]
+                ],
+                required_potions=[
+                    healing_potion,
+                    mana_potion
+                ]
+            )
+            db.add(legendary_elixir)
+            db.commit()
         
         # Create a sample player
         existing_player = db.query(models.Player).first()
@@ -68,16 +79,7 @@ def create_sample_data():
             # Create grimoire for the player
             grimoire = models.Grimoire(player=player)
             db.add(grimoire)
-            # Add some sample inventory items
-            # sample_items = [
-            #     {"item_type": "potion", "item_id": "healing_potion_basic", "quantity": 2},
-            #     {"item_type": "ingredient", "item_id": "dried_herbs", "quantity": 5},
-            #     {"item_type": "tool", "item_id": "mortar_pestle", "quantity": 1},
-            # ]
-            #
-            # for item_data in sample_items:
-            #     item = models.InventoryItem(player_id=player.id, **item_data)
-            #     db.add(item)
+
 
             db.commit()
             db.refresh(player)

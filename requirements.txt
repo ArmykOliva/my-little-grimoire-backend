@@ -5,3 +5,4 @@ psycopg2-binary
 alembic
 pydantic
 python-multipart
+geopy

@@ -1,9 +1,12 @@
 from fastapi import FastAPI, Depends, HTTPException
+from typing import Optional
 from sqlalchemy.orm import Session
 from typing import List
 import models, schemas
+import utils
 from database import SessionLocal, engine, get_db
 import uuid
+import random
 from datetime import datetime
 # Create tables
 models.Base.metadata.create_all(bind=engine)
@@ -17,6 +20,8 @@ async def root():
     return {"message": "Welcome to My Little Grimoire API"}
 
 # Player/Grimoire endpoints
+
+#TODO: evaluate: do we have to return session_id and shears as well?
 @app.post("/players/", response_model=schemas.Player)
 async def create_player(player: schemas.PlayerCreate, db: Session = Depends(get_db)):
     """Create a new player with their grimoire"""
@@ -48,7 +53,32 @@ async def get_player_grimoire(player_id: uuid.UUID, db: Session = Depends(get_db
     db_grimoire = db.query(models.Grimoire).filter(models.Grimoire.player_id == player_id).first()
     if not db_grimoire:
         raise HTTPException(status_code=404, detail="Grimoire not found")
-    return schemas.Grimoire(recipe_ids=[r.id for r in db_grimoire.unlocked_recipes])
+    return db_grimoire
+
+#TODO: evaluate: do we really need grimoire or just save connections by player?
+@app.post("/players/{player_id}/grimoire/unlock/{recipe_id}", response_model=schemas.Grimoire)
+async def unlock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Session = Depends(get_db)):
+    # Find grimoire for player
+    db_grimoire = db.query(models.Grimoire).filter(models.Grimoire.player_id == player_id).first()
+    if not db_grimoire:
+        raise HTTPException(status_code=404, detail="Grimoire not found")
+
+    # Find recipe by ID
+    recipe = db.query(models.Recipe).filter(models.Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    # Check if recipe is already unlocked
+    if recipe in db_grimoire.unlocked_recipes:
+        return {"message": "Recipe already unlocked"}
+
+    # Unlock recipe
+    db_grimoire.unlocked_recipes.append(recipe)
+    db.commit()
+    db.refresh(db_grimoire)
+
+    # Return updated grimoire recipe ids
+    return db_grimoire
 
 @app.get("/recipes/{recipe_id}", response_model=schemas.Recipe)
 async def get_recipes(recipe_id: int, db: Session = Depends(get_db)):
@@ -76,66 +106,22 @@ async def get_all_potions(db: Session = Depends(get_db)):
     recipes = db.query(models.Recipe).all()
     return recipes
 
-#TODO: do we add recipe to player or to grimoire?
-@app.post("/players/{player_id}/grimoire/unlock/{recipe_id}", response_model=schemas.Grimoire)
-async def unlock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Session = Depends(get_db)):
-    # Find grimoire for player
-    db_grimoire = db.query(models.Grimoire).filter(models.Grimoire.player_id == player_id).first()
-    if not db_grimoire:
-        raise HTTPException(status_code=404, detail="Grimoire not found")
 
-    # Find recipe by ID
-    recipe = db.query(models.Recipe).filter(models.Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-
-    # Check if recipe is already unlocked
-    if recipe in db_grimoire.unlocked_recipes:
-        return {"message": "Recipe already unlocked"}
-
-    # Unlock recipe
-    db_grimoire.unlocked_recipes.append(recipe)
-    db.commit()
-    db.refresh(db_grimoire)
-
-    # Return updated grimoire recipe ids
-    return schemas.Grimoire(recipe_ids=[r.id for r in db_grimoire.unlocked_recipes])
-
-# Recipe session endpoints
-@app.post("/start-recipe-session")
-async def start_recipe_session(player_uuid: str, recipe_id: str, db: Session = Depends(get_db)):
-    """Start a new recipe session"""
-    # for example recipe_name == "health_potion"
-
-    #TODO
-
-
-    #TODO: check whether player has all potions needed
-
-    #TODO: create list of shears needed
-
-    #TODO: create 5-letter-cide for later connection
-
-    #TODO: return session_id + shear color
-    #Questin: what if all shears are used? just random? (or don't allow to connect?)
-    return {
-        "session_id": "12454567-e89b-12d3-a456-426614174000"
-    }
-
+# Inventory
 @app.get("/players/{player_id}/inventory", response_model=schemas.Inventory)
 async def get_inventory(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    inventory = [
-        schemas.InventoryItem(
-            potion_id=item.potion_id,
-            amount=item.amount
-        )
-        for item in player.inventory_items
-    ]
-    return schemas.Inventory(potions=inventory)
+    # inventory = [
+    #     schemas.InventoryItem(
+    #         potion_id=item.potion_id,
+    #         amount=item.amount
+    #     )
+    #     for item in player.inventory_items
+    # ]
+    return schemas.Inventory(potions = player.inventory_items)
 
 @app.post("/players/{player_id}/inventory/add/{potion_id}")
 async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Session = Depends(get_db)):
@@ -143,11 +129,10 @@ async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Sess
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    """ Optional 
     potion = db.query(models.Recipe).filter(models.Recipe.id == potion_id).first()
     if not potion:
         raise HTTPException(status_code=404, detail="Potion does not exist")
-    """
+
     # Check if player already has this potion
     inventory_item = db.query(models.InventoryItem).filter_by(player_id=player_id, potion_id=potion_id).first()
 
@@ -160,8 +145,206 @@ async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Sess
     db.commit()
     return {"message": "Potion added to inventory"}
 
-#TODO: use item from inventory
+@app.post("/players/{player_id}/inventory/remove/{potion_id}")
+async def remove_potion_from_inventory(player_id: uuid.UUID, potion_id: int, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
 
-#TODO: join session
+    inventory_item = db.query(models.InventoryItem).filter_by(player_id=player_id, potion_id=potion_id).first()
+    if not inventory_item:
+        raise HTTPException(status_code=404, detail="Potion not found in inventory")
 
-#TODO: get session information
+    if inventory_item.amount > 1:
+        inventory_item.amount -= 1
+    else:
+        db.delete(inventory_item)
+
+    db.commit()
+    return {"message": "Potion removed from inventory"}
+
+#TODO: evaluate if we need session_id or check it always by session_id from player
+
+#create session
+@app.post("/session/create", response_model=schemas.SessionJoined)
+def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if player.session_id:
+        raise HTTPException(status_code=400, detail="Player already in a session")
+
+    #TODO: check if recipe is unlocked by player
+    recipe = db.query(models.Recipe).filter(models.Recipe.id == data.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    #TODO: check if player has all potions needed
+
+    #Extract flower color_ids from required flowers
+    available_colors = available_colors = list({flower.color_id for flower in recipe.required_flowers})
+
+    if not available_colors:
+        raise HTTPException(status_code=400, detail="No available colors in recipe")
+
+    assigned_color = available_colors.pop(0)
+
+    join_code = utils.generate_code()
+
+    while (db.query(models.Session).filter_by(code=join_code).first()):
+        join_code = utils.generate_code()
+
+    new_session = models.Session(
+        recipe=recipe,
+        code=join_code,
+        shears_available=available_colors,
+        initial_lat=data.initial_lat,
+        initial_lng=data.initial_lng
+    )
+    db.add(new_session)
+    db.flush()
+
+    # TODO: update player on client side, alternatively: return player
+    player.session_id = new_session.session_id
+    player.shears_color = assigned_color
+
+    db.commit()
+
+    return schemas.SessionJoined(
+        session_id=new_session.session_id,
+        color_id=assigned_color,
+        code=join_code
+    )
+
+#Join session
+@app.post("/session/join", response_model=schemas.SessionJoined)
+def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
+
+    #get player
+    player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if player.session_id:
+        raise HTTPException(status_code=400, detail="Player already in a session")
+
+    #get session
+    session = db.query(models.Session).filter(models.Session.code == data.code).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    #TODO: what if players moved? Should we always update with position of first player or let it be like that?
+    if not utils.is_within_distance(data.lat, data.lng, session.initial_lat, session.initial_lng):
+        raise HTTPException(status_code=400, detail="Too far from session")
+
+    if not session.shears_available:
+        raise HTTPException(status_code=400, detail="No shears/colors available")
+    assigned_color = session.shears_available[0]
+    session.shears_available = session.shears_available[1:]
+    player.session_id = session.session_id
+    player.shears_color = assigned_color
+
+    db.commit()
+
+
+    return schemas.SessionJoined(
+        session_id=session.session_id,
+        color_id=assigned_color,
+        code=data.code
+    )
+
+#Leave all sessions
+@app.post("/players/{player_id}/leave")
+def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if session and player.shears_color:
+        session.shears_available.append(player.shears_color)
+
+    player.session_id = None
+    player.shears_color = None
+
+    db.commit()
+    return {"message": "Left session successfully"}
+
+
+
+#TODO: flower recognition, receiving picture from the client
+#Right now: mocked up with flower_ids
+@app.post("/session/collect_flower", response_model=schemas.SessionInfo)
+def collect_flower(
+    flower_id: int,
+    player_id: uuid.UUID,
+    db: Session = Depends(get_db)
+):
+
+    #player
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player or not player.session_id:
+        raise HTTPException(status_code=404, detail="Player not in a session")
+
+    # get session
+    session = player.session
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    flower = db.query(models.Flower).filter(models.Flower.id == flower_id).first()
+    if not flower:
+        raise HTTPException(status_code=404, detail="Flower not found")
+
+    # Check if flower color matches player's shears
+    if flower.color_id != player.shears_color:
+        raise HTTPException(status_code=400, detail="Flower color doesn't match your shears color")
+
+    # Add flower to session's collected flowers
+    recipe = session.recipe
+    recipe_flower_ids = {f.id for f in recipe.required_flowers}
+
+    if flower.id not in recipe_flower_ids:
+        raise HTTPException(status_code=400, detail="This flower is not required for the recipe")
+
+    session.flowers_collected.append(flower)
+
+    # Check if recipe requirements are met
+    recipe = session.recipe
+    required_ids = {f.id for f in recipe.required_flowers}
+    collected_ids = {f.id for f in session.flowers_collected}
+    if required_ids.issubset(collected_ids):
+        session.status = 1  # Complete
+
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+
+
+@app.get("/session/info/{session_id}", response_model=Optional[schemas.SessionInfo])
+def session_info(player_id: uuid.UUID, session_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player or player.session_id != session_id:
+        raise HTTPException(status_code=403, detail="Not part of this session")
+
+    session = db.query(models.Session).filter(models.Session.session_id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status == 1:
+        # Remove player from session
+        player.session_id = None
+        player.shears_color = None
+        db.commit()
+
+        # Check if any players remain in session
+        remaining_players = session.players
+        if not remaining_players:
+            db.delete(session)
+            db.commit()
+        return None
+    return session
+
+#TODO: clean sessions (based on creation_time)
+
+#TODO: get all sessions (for debugging)
