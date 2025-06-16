@@ -16,7 +16,7 @@ class PlayerBase(BaseModel):
 
 class Player(PlayerBase):
     player_id: uuid.UUID
-    money: Optional[int] = 0
+    money: Optional[int] = 100
     class Config:
         orm_mode = True
 class PlayerCreate(PlayerBase):

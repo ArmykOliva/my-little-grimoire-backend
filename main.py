@@ -57,6 +57,7 @@ async def get_player_grimoire(player_id: uuid.UUID, db: Session = Depends(get_db
     return db_grimoire
 
 #TODO: evaluate: do we really need grimoire or just save connections by player?
+#TODO: returning grimoire or success message?
 @app.post("/players/{player_id}/grimoire/unlock/{recipe_id}", response_model=schemas.Grimoire)
 async def unlock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Session = Depends(get_db)):
     # Find grimoire for player
@@ -124,6 +125,7 @@ async def get_inventory(player_id: uuid.UUID, db: Session = Depends(get_db)):
     ]
     return schemas.Inventory(potions = inventory)
 
+#TODO: if needed, return the player's inventory instead
 @app.post("/players/{player_id}/inventory/add/{potion_id}")
 async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
@@ -144,7 +146,14 @@ async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Sess
         db.add(new_item)
 
     db.commit()
-    return {"message": "Potion added to inventory"}
+    inventory = [
+        schemas.InventoryItem(
+            potion=schemas.PotionBase(id=item.potion.id, potion_name=item.potion.potion_name),
+            amount=item.amount
+        )
+        for item in player.inventory_items
+    ]
+    return schemas.Inventory(potions=inventory)
 
 @app.post("/players/{player_id}/inventory/remove/{potion_id}")
 async def remove_potion_from_inventory(player_id: uuid.UUID, potion_id: int, db: Session = Depends(get_db)):
@@ -162,9 +171,14 @@ async def remove_potion_from_inventory(player_id: uuid.UUID, potion_id: int, db:
         db.delete(inventory_item)
 
     db.commit()
-    return {"message": "Potion removed from inventory"}
-
-#TODO: evaluate if we need session_id or check it always by session_id from player
+    inventory = [
+        schemas.InventoryItem(
+            potion=schemas.PotionBase(id=item.potion.id, potion_name=item.potion.potion_name),
+            amount=item.amount
+        )
+        for item in player.inventory_items
+    ]
+    return schemas.Inventory(potions=inventory)
 
 #create session
 @app.post("/session/create", response_model=schemas.SessionJoined)
@@ -291,11 +305,7 @@ def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
 #TODO: flower recognition, receiving picture from the client
 #Right now: mocked up with flower_ids
 @app.post("/session/collect_flower", response_model=Optional[schemas.SessionInfo])
-def collect_flower(
-    flower_id: int,
-    player_id: uuid.UUID,
-    db: Session = Depends(get_db)
-):
+def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(get_db)):
 
     #player
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
@@ -413,7 +423,9 @@ def get_all_sessions(db: Session = Depends(get_db)):
 
 
 # Decorations
-@app.post("/players/{player_id}/buy_decoration", response_model=schemas.DecorationInventory)
+#TODO: maybe, unlike recipe, save only id and the info about decoration is only on the client side?
+#TODO: should we return decoration inventory or only success message?
+@app.post("/players/{player_id}/decorations/buy", response_model=schemas.DecorationInventory)
 def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
     decoration = db.query(models.Decoration).get(decoration_id)
     if not decoration:
@@ -439,3 +451,59 @@ def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depen
     inventory_decorations = player.decorations
 
     return schemas.DecorationInventory(decorations = [schemas.DecorationPlayer(used = d.used, position = d.position, id = d.decoration_id, name = d.decoration.name, allowed_position = d.decoration.allowed_position) for d in inventory_decorations])
+
+#TODO: who handles that decorations the player owns don't show up in the store
+@app.get("/decorations", response_model=List[schemas.DecorationShop])
+def get_all_decorations(db: Session = Depends(get_db)):
+    return db.query(models.Decoration).all()
+
+
+#Get decorations
+@app.get("/players/{player_id}/decorations", response_model=schemas.DecorationInventory)
+def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    inventory_decorations = player.decorations
+
+    return schemas.DecorationInventory(decorations=[
+        schemas.DecorationPlayer(used=d.used, position=d.position, id=d.decoration_id, name=d.decoration.name, allowed_position=d.decoration.allowed_position) for d in inventory_decorations])
+
+#TODO: function, that just takes decoration inventory from client and assigns everything to the player?
+#TODO: do we need a function that would return only placed items or does the client handle that?
+
+@app.post("/players/{player_id}/decorations/place/{decoration_id}")
+def place_decoration(player_id: uuid.UUID, decoration_id: int, position: int, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    decoration_player = db.query(models.DecorationPlayer).filter_by(player_id=player_id, decoration_id=decoration_id).first()
+
+    if not decoration_player:
+        raise HTTPException(status_code=404, detail="Player does not own this decoration")
+
+    decoration = db.query(models.Decoration).filter_by(id=decoration_id).first()
+    if not decoration:
+        raise HTTPException(status_code=404, detail="Decoration not found")
+
+    # Check allowed position using bitmask
+    if not (decoration.allowed_position & (1 << position)):
+        raise HTTPException(status_code=400, detail="Invalid position for this decoration")
+
+    other_at_position = (db.query(models.DecorationPlayer)
+                        .filter(models.DecorationPlayer.player_id == player_id,
+                            models.DecorationPlayer.used == True,
+                            models.DecorationPlayer.position == position)
+                        .first())
+    if other_at_position:
+        # Unplace the other decoration
+        other_at_position.used = False
+        other_at_position.position = None
+    decoration_player.used = True
+    decoration_player.position = position
+    db.commit()
+    inventory_decorations = player.decorations
+
+    return schemas.DecorationInventory(decorations=[schemas.DecorationPlayer(used=d.used, position=d.position, id=d.decoration_id, name=d.decoration.name,
+                                        allowed_position=d.decoration.allowed_position) for d in inventory_decorations])
