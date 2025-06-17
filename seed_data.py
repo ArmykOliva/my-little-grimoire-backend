@@ -11,11 +11,11 @@ def create_sample_data():
     db = SessionLocal()
     try:
         sample_decorations = [
-            {"id": 1, "name": "Wooden Fence", "allowed_position": 0b11111, "cost": 50},
-            {"id": 2, "name": "Crystal Fountain", "allowed_position": 0b00100, "cost": 10},
-            {"id": 3, "name": "Enchanted Tree", "allowed_position": 0b11000, "cost": 150},
-            {"id": 4, "name": "Mystic Stone", "allowed_position": 0b00011, "cost": 10},
-            {"id": 5, "name": "Golden Bench", "allowed_position": 0b10101, "cost": 10},
+            {"id": 1, "allowed_position": 0b11111, "cost": 50},
+            {"id": 2, "allowed_position": 0b00100, "cost": 10},
+            {"id": 3, "allowed_position": 0b11000, "cost": 150},
+            {"id": 4, "allowed_position": 0b00011, "cost": 10},
+            {"id": 5, "allowed_position": 0b10101, "cost": 10},
         ]
 
         for decoration_data in sample_decorations:
@@ -26,62 +26,37 @@ def create_sample_data():
         print("Sample decorations added successfully")
         # Create sample flowers
         sample_flowers = [
-            {"color_id": "red", "flower_name": "Crimson Rose", "flower_rarity": "common"},
-            {"color_id": "blue", "flower_name": "Azure Lily", "flower_rarity": "uncommon"},
-            {"color_id": "purple", "flower_name": "Mystic Violet", "flower_rarity": "rare"},
-            {"color_id": "gold", "flower_name": "Golden Sunflower", "flower_rarity": "legendary"},
-            {"color_id": "green", "flower_name": "Forest Herb", "flower_rarity": "common"},
+            {"color_id": "red"},
+            {"color_id": "blue"},
+            {"color_id": "purple"},
+            {"color_id": "gold"},
+            {"color_id": "green"}
         ]
 
         flower_map = {}
         for flower_data in sample_flowers:
-            flower = db.query(models.Flower).filter_by(flower_name=flower_data["flower_name"]).first()
+            flower = db.query(models.Flower).filter(models.Flower.color_id == flower_data["color_id"]).first()
             if not flower:
                 flower = models.Flower(**flower_data)
                 db.add(flower)
                 db.commit()
-            flower_map[flower_data["flower_name"]] = flower
+            flower_map[flower_data["color_id"]] = flower
+        print("Flowers added!")
         # Create sample recipes
 
-        healing_potion = db.query(models.Recipe).filter_by(potion_name="Healing Potion").first()
-        if not healing_potion:
-            healing_potion = models.Recipe(
-                potion_name="Healing Potion",
-                required_flowers=[
-                    flower_map["Crimson Rose"],
-                    flower_map["Forest Herb"]
-                ]
-            )
-            db.add(healing_potion)
-            db.commit()
+        healing_potion = models.Recipe(required_flowers=[flower_map["red"], flower_map["green"]])
+        db.add(healing_potion)
+        db.commit()
+        mana_potion = models.Recipe(required_flowers=[flower_map["blue"], flower_map["purple"]])
+        db.add(mana_potion)
+        db.commit()
+        legendary_elixir = models.Recipe(
+            required_flowers=[flower_map["gold"]],
+            required_potions=[healing_potion, mana_potion])
+        db.add(legendary_elixir)
+        db.commit()
 
-        mana_potion = db.query(models.Recipe).filter_by(potion_name="Mana Potion").first()
-        if not mana_potion:
-            mana_potion = models.Recipe(
-                potion_name="Mana Potion",
-                required_flowers=[
-                    flower_map["Azure Lily"],
-                    flower_map["Mystic Violet"]
-                ]
-            )
-            db.add(mana_potion)
-            db.commit()
-
-        legendary_elixir = db.query(models.Recipe).filter_by(potion_name="Legendary Elixir").first()
-        if not legendary_elixir:
-            legendary_elixir = models.Recipe(
-                potion_name="Legendary Elixir",
-                required_flowers=[
-                    flower_map["Golden Sunflower"]
-                ],
-                required_potions=[
-                    healing_potion,
-                    mana_potion
-                ]
-            )
-            db.add(legendary_elixir)
-            db.commit()
-        
+        print ("Flowers added!")
         # Create a sample player
         existing_player = db.query(models.Player).filter(models.Player.name == "Player").first()
         if not existing_player:
@@ -92,8 +67,6 @@ def create_sample_data():
             # Create grimoire for the player
             grimoire = models.Grimoire(player=player)
             db.add(grimoire)
-
-
             db.commit()
             db.refresh(player)
             print(f"Created sample player with UUID: {player.player_id}")
@@ -128,23 +101,16 @@ def create_sample_data():
         print("Sample data creation completed!")
         
         # Print summary
-        # flower_count = db.query(models.Flower).count()
+        flower_count = db.query(models.Flower).count()
         recipe_count = db.query(models.Recipe).count()
         player_count = db.query(models.Player).count()
         grimoire_count = db.query(models.Grimoire).count()
 
         print(f"\nDatabase summary:")
-        #print(f"Flowers: {flower_count}")
+        print(f"Flowers: {flower_count}")
         print(f"Recipes: {recipe_count}")
         print(f"Players: {player_count}")
         print(f"Grimoire: {grimoire_count}")
-
-        grimoire = db.query(models.Grimoire).first()
-        if grimoire:
-            grimoire_player = grimoire.player_id
-            print("Player UUID:", grimoire_player)
-        else:
-            print("No grimoire found.")
         # Show sample player UUID for testing
         sample_player = db.query(models.Player).first()
         if sample_player:
@@ -159,15 +125,33 @@ def create_sample_data():
 def reset_db():
     db = SessionLocal()
     try:
-        db.execute(text("TRUNCATE TABLE grimoires, players, recipes RESTART IDENTITY CASCADE;"))
+        db.execute(text("""
+                        TRUNCATE TABLE
+                            decoraion_player,
+                        inventory_items,
+                        grimoires,
+                        players,
+                        session_flower_association,
+                        sessions,
+                        recipe_flowers,
+                        recipe_potions,
+                        grimoire_recipes,
+                        recipes,
+                        decorations,
+                        flowers
+                    RESTART IDENTITY CASCADE;
+                        """))
+        db.commit()
         db.commit()
     except Exception as e:
         db.rollback()
         print("Error:", e)
     finally:
         db.close()
-if __name__ == "__main__":
-    # Create tables if they don't exist
+def reset_and_seed_call():
     reset_db()
     models.Base.metadata.create_all(bind=engine)
-    create_sample_data() 
+    create_sample_data()
+if __name__ == "__main__":
+    reset_and_seed_call()
+
