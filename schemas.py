@@ -1,3 +1,5 @@
+
+
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -31,7 +33,6 @@ class PlayerCreate(PlayerBase):
 class Flower (BaseModel):
     id: int
     color_id: str
-
     class Config:
         orm_mode = True
 
@@ -40,14 +41,23 @@ class PotionBase(BaseModel):
     id: int
     class Config:
         orm_mode = True
-
-class Recipe (PotionBase):
-    required_potions: List['Recipe'] = []
-    required_flowers: List[Flower] = []
+class RecipeCreate (BaseModel):
+    name: Optional[str]
+    required_potions: List[int] = []
+    required_flowers: List[int] = []
     class Config:
         orm_mode = True
-Recipe.model_rebuild()
+class Recipe (RecipeCreate):
+    id: int
 
+class RecipeDebug(BaseModel):
+    name: Optional[str]
+    required_potions: List['RecipeDebug']
+    required_flowers: List[Flower]
+
+    class Config:
+        orm_mode = True
+RecipeDebug.model_rebuild()
 # Grimoire Schemas
 class Grimoire(BaseModel):
     unlocked_recipes: List[int]
@@ -84,33 +94,30 @@ class SessionJoin(BaseModel):
     code: str
     class Config:
         orm_mode = True
-class SessionJoined(BaseModel):
-    recipe_id: int
-    color_id: str
-    #5-letter-string
-    code: str
-    class Config:
-        orm_mode = True
-
-    #TODO: can we allow players to start collecting flowers when not everybody joined?
-    # can be done by returning the amount of available colors or so
-class SessionInfo(SessionBase):
-    flowers_collected: List[int]
-    class Config:
-        orm_mode = True
 
 
 # for debugging
 class PlayerSessionInfo(BaseModel):
     player_id: uuid.UUID
     name: str
+    picture: Optional[int] = 0
     shears_color: str
+    class Config:
+        orm_mode = True
+class SessionInfo(BaseModel):
+    recipe_id: int
+    color_id: Optional[str]
+    #5-letter-string
+    code: str
+    players: List[PlayerSessionInfo] =[]
+    flowers_collected: List[int]
+    status: int
     class Config:
         orm_mode = True
 
 class DebugSessionInfo(BaseModel):
     code: str
-    recipe: Recipe
+    recipe: RecipeDebug
     status: int
     flowers_collected: List[Flower]
     players: List[PlayerSessionInfo]
@@ -121,7 +128,13 @@ class DebugSessionInfo(BaseModel):
 # Decorations
 
 # Shop decorations
+class DecorationCreate(BaseModel):
+    name: Optional[str]
+    cost: int
+    allowed_position: int
+
 class DecorationShop(BaseModel):
+    name: Optional[str]
     id: int
     cost: int
     class Config:

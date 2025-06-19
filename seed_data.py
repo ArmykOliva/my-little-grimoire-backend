@@ -11,11 +11,11 @@ def create_sample_data():
     db = SessionLocal()
     try:
         sample_decorations = [
-            {"id": 1, "allowed_position": 0b11111, "cost": 50},
-            {"id": 2, "allowed_position": 0b00100, "cost": 10},
-            {"id": 3, "allowed_position": 0b11000, "cost": 150},
-            {"id": 4, "allowed_position": 0b00011, "cost": 10},
-            {"id": 5, "allowed_position": 0b10101, "cost": 10},
+            {"name":"A", "allowed_position": 0b11111, "cost": 50},
+            {"name":"B","allowed_position": 0b00100, "cost": 10},
+            {"name":"C","allowed_position": 0b11000, "cost": 150},
+            {"name":"D","allowed_position": 0b00011, "cost": 10},
+            {"name":"E","allowed_position": 0b10101, "cost": 10},
         ]
 
         for decoration_data in sample_decorations:
@@ -44,13 +44,14 @@ def create_sample_data():
         print("Flowers added!")
         # Create sample recipes
 
-        healing_potion = models.Recipe(required_flowers=[flower_map["red"], flower_map["green"]])
+        healing_potion = models.Recipe(name = "Healing Potion", required_flowers=[flower_map["red"], flower_map["green"]])
         db.add(healing_potion)
         db.commit()
-        mana_potion = models.Recipe(required_flowers=[flower_map["blue"], flower_map["purple"]])
+        mana_potion = models.Recipe(name = "Mana Potion", required_flowers=[flower_map["blue"], flower_map["purple"]])
         db.add(mana_potion)
         db.commit()
         legendary_elixir = models.Recipe(
+            name="Legendary Elixir",
             required_flowers=[flower_map["gold"]],
             required_potions=[healing_potion, mana_potion])
         db.add(legendary_elixir)

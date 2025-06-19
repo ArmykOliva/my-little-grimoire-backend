@@ -99,7 +99,7 @@ class Grimoire(Base):
 class Recipe(Base):
     __tablename__ = "recipes"
     id = Column(Integer, primary_key=True, index=True)
-
+    name = Column(String, nullable=False,  default = "SomePotion")
     required_potions = relationship(
         "Recipe",
         secondary=recipe_potions,
@@ -160,10 +160,10 @@ class Session(Base):
 #Decorations
 class Decoration(Base):
     __tablename__ = "decorations"
+    name = Column(String, nullable=False, default="SomeDecoration")
     id = Column(Integer, primary_key=True)
     allowed_position = Column(Integer, nullable=False)  # bitmask like 0b10101
     cost = Column(Integer, nullable=False)
-
     #everything else client side
 
 class DecorationPlayer(Base):
