@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "color_id": {
+      "type": "string",
+      "description": "The identified flower color from the valid color categories"
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message if the image doesn't contain a flower or cannot be identified. leave empty if the image is a flower."
+    }
+  },
+  "required": ["color_id", "error"],
+  "additionalProperties": false
+} 

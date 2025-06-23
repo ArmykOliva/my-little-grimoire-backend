@@ -161,3 +161,11 @@ class DecorationUsed(BaseModel):
     position: int
     class Config:
         orm_mode = True
+
+# Flower Identification Schemas
+class FlowerIdentificationResponse(BaseModel):
+    color_id: Optional[str] = None
+    error: Optional[str] = None
+    
+    class Config:
+        orm_mode = True
