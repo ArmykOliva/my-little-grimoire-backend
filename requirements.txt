@@ -6,3 +6,5 @@ alembic
 pydantic
 python-multipart
 geopy
+olingo-llm-parser
+openai

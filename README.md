@@ -48,3 +48,10 @@ docker-compose down
 docker-compose down -v
 docker-compose up --build
 ```
+
+## seed db
+```
+docker compose down -v
+docker compose exec web sh
+python seed_data.py
+```
