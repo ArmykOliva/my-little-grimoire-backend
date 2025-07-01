@@ -143,7 +143,9 @@ def reset_db():
                         grimoire_recipes,
                         recipes,
                         decorations,
-                        flowers
+                        flowers,
+                        player_followers,
+                        playeraccounts
                     RESTART IDENTITY CASCADE;
                         """))
         db.commit()

@@ -36,7 +36,7 @@ class PlayerLog(BaseModel):
 
 
 #Flowers
-#TODO: how the flower recognition function should work and what kind of flower it will return
+
 
 class Flower (BaseModel):
     id: int

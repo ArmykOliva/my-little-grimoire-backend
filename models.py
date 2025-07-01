@@ -43,6 +43,15 @@ session_flower_association = Table(
     Column("flower_id", ForeignKey("flowers.id"), primary_key=True),
 )
 
+
+class PlayerFollower(Base):
+    __tablename__ = "player_followers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    follower_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False)
+    followed_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False)
+
 def random_name():
     return random.choice(["Alex", "Krystof", "Ben", "Maxi", "Heloisa"])
 

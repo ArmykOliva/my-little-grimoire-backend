@@ -106,6 +106,81 @@ async def get_player(player_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Player not found")
     return db_player
 
+
+@app.post("/players/{player_id}/follow/{followed_id}")
+async def follow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
+
+    if player_id == followed_id:
+        raise HTTPException(status_code=404, detail="Cannot follow yourself")
+    follower = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    followed = db.query(models.Player).filter(models.Player.player_id ==followed_id).first()
+
+    if not follower or not followed:
+        raise HTTPException(status_code=404, detail="Player(s) not found")
+
+    existing = db.query(models.PlayerFollower).filter_by(
+        follower_id=follower.id,
+        followed_id=followed.id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Already following this player")
+
+    follow = models.PlayerFollower(
+        follower_id=follower.id,
+        followed_id=followed.id
+    )
+    db.add(follow)
+    db.commit()
+    return {"message": "Followed successfully"}
+
+
+@app.post("/players/{player_id}/unfollow/{followed_id}")
+async def unfollow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
+    follower = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    followed = db.query(models.Player).filter(models.Player.player_id == followed_id).first()
+
+    if not follower or not followed:
+        raise HTTPException(status_code=404, detail="Player(s) not found")
+
+    deleted = db.query(models.PlayerFollower).filter_by(
+        follower_id=follower.id,
+        followed_id=followed.id
+    ).delete()
+
+    if not deleted:
+        raise HTTPException(status_code=400, detail="Not following this player")
+
+    db.commit()
+    return {"message": "Unfollowed successfully"}
+
+@app.get("/players/{player_id}/followers", response_model=List[schemas.Player])
+async def get_followers(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    followers = (
+        db.query(models.Player)
+        .join(models.PlayerFollower, models.Player.id == models.PlayerFollower.follower_id)
+        .filter(models.PlayerFollower.followed_id == player.id)
+        .all()
+    )
+    return followers
+
+@app.get("/players/{player_id}/following", response_model=List[schemas.Player])
+async def get_following(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    following = (
+        db.query(models.Player)
+        .join(models.PlayerFollower, models.Player.id == models.PlayerFollower.followed_id)
+        .filter(models.PlayerFollower.follower_id == player.id)
+        .all()
+    )
+    return following
+
 #Customers
 @app.put("/players/{player_id}/customer/{customer_id}", response_model=schemas.Player)
 async def set_customer_id(player_id: uuid.UUID, customer_id: int, db: Session = Depends(get_db)):
