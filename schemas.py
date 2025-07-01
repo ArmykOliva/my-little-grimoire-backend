@@ -24,7 +24,9 @@ class Player(PlayerBase):
         orm_mode = True
 class PlayerCreate(PlayerBase):
     pass
-
+class PlayerLog(BaseModel):
+    name: str
+    password: str
 
 
 #Flowers
@@ -33,6 +35,7 @@ class PlayerCreate(PlayerBase):
 class Flower (BaseModel):
     id: int
     color_id: str
+    name: str
     class Config:
         orm_mode = True
 
@@ -101,14 +104,15 @@ class PlayerSessionInfo(BaseModel):
     player_id: uuid.UUID
     name: str
     picture: Optional[int] = 0
-    shears_color: str
+    assigned_flower: int
     class Config:
         orm_mode = True
 class SessionInfo(BaseModel):
     recipe_id: int
-    color_id: Optional[str]
+    flower_id: Optional[int]
     #5-letter-string
     code: str
+    initial_player: uuid.UUID
     players: List[PlayerSessionInfo] =[]
     flowers_collected: List[int]
     status: int
@@ -120,6 +124,7 @@ class DebugSessionInfo(BaseModel):
     recipe: RecipeDebug
     status: int
     flowers_collected: List[Flower]
+    initial_player: uuid.UUID
     players: List[PlayerSessionInfo]
     started_at: datetime
     class Config:
