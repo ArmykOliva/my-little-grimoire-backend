@@ -265,7 +265,7 @@ def remove_potion_from_inventory_func(player_id: uuid.UUID, potion_id: int, db: 
 # Decorations
 
 @app.post("/players/{player_id}/decorations/buy/{decoration_id}", response_model=schemas.DecorationInventory)
-def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
+async def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
     decoration = db.query(models.Decoration).get(decoration_id)
     if not decoration:
         raise HTTPException(404, "Decoration not found")
@@ -293,7 +293,7 @@ def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depen
 
 #Get decorations
 @app.get("/players/{player_id}/decorations", response_model=schemas.DecorationInventory)
-def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
+async def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -303,7 +303,7 @@ def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
                      inventory_decorations])
 
 @app.post("/players/{player_id}/decorations/place/{decoration_id}")
-def place_decoration(player_id: uuid.UUID, decoration_id: int, position: int, db: Session = Depends(get_db)):
+async def place_decoration(player_id: uuid.UUID, decoration_id: int, position: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -356,7 +356,7 @@ async def get_used_decorations(player_id: uuid.UUID, db: Session = Depends(get_d
 """Sessions"""
 #update location
 @app.put("/players/{player_id}/session/update_loc", response_model=schemas.SessionInfo)
-def update_loc_session(player_id: uuid.UUID, data: schemas.PlayerLocation, db: Session = Depends(get_db)):
+async def update_loc_session(player_id: uuid.UUID, data: schemas.PlayerLocation, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -384,7 +384,7 @@ def update_loc_session(player_id: uuid.UUID, data: schemas.PlayerLocation, db: S
 
 #create session
 @app.post("/session/create", response_model=schemas.SessionInfo)
-def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
+async def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -455,7 +455,7 @@ def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
 
 #Join session
 @app.post("/session/join", response_model=schemas.SessionInfo)
-def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
+async def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
     #get player
     player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
     if not player:
@@ -504,7 +504,7 @@ def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
 
 #Leave all sessions
 @app.post("/players/{player_id}/leaveSession")
-def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
+async def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -536,9 +536,9 @@ def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
         return {"message": "Player left. Other player will return to lobby"}
     return {"message": "Left session successfully"}
 
-#Right now: mocked up with flower_ids
-@app.post("/players/{player_id}/session/collect_flower/{flower_id}", response_model=Optional[schemas.SessionInfo])
-def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(get_db)):
+
+@app.post("/players/{player_id}/session/collect_flower", response_model=Optional[schemas.SessionInfo])
+async def collect_flower(player_id: uuid.UUID, image: UploadFile = File(...), db: Session = Depends(get_db)):
     """Collect flower"""
     #player
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
@@ -556,19 +556,25 @@ def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(
     if session.status == 2:
         raise HTTPException(status_code=400, detail="Session already in brewing stage")
 
-    flower = db.query(models.Flower).filter(models.Flower.id == flower_id).first()
+    flower_response = await identify_flower(image, db)
+
+    if flower_response.error:
+        raise HTTPException(status_code=404, detail=flower_response.error)
+
+    flower = db.query(models.Flower).filter(models.Flower.color_id == flower_response.color_id).first()
+
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")
 
     # Check if flower color matches player's shears
-    if flower_id != player.assigned_flower:
+    if flower.id != player.assigned_flower:
         raise HTTPException(status_code=400, detail="You cannot collect this flower!")
 
     # Add flower to session's collected flowers
     recipe = db.query(models.Recipe).get(session.recipe_id)
     recipe_flower_ids = {f.id for f in recipe.required_flowers}
 
-    if flower_id not in recipe_flower_ids:
+    if flower.id not in recipe_flower_ids:
         raise HTTPException(status_code=400, detail="This flower is not required for the recipe")
 
     session.flowers_collected.append(flower)
@@ -595,112 +601,7 @@ def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(
         status=session.status
     )
 
-
-@app.get("/players/{player_id}/session/info", response_model=Optional[schemas.SessionInfo])
-def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Info about a current session"""
-    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
-    if not player or not player.session_id:
-        raise HTTPException(status_code=404, detail="Player not in a session")
-
-    # get session
-    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    return schemas.SessionInfo(
-        recipe_id=session.recipe_id,
-        flower_id=player.assigned_flower,
-        code=session.code,
-        initial_player = session.initial_player,
-        flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
-                                           picture=p.profile_picture) for p in session.players],
-        status=session.status
-    )
-
-
-#Overall
-@app.get("/decorations", response_model=List[schemas.DecorationShop])
-def get_all_decorations(db: Session = Depends(get_db)):
-    """Get info about all decorations"""
-    return db.query(models.Decoration).all()
-
-@app.post("/decorations/add")
-async def add_decoration(decoration: schemas.DecorationCreate, db: Session = Depends(get_db)):
-    """Add a new decoration"""
-
-    decoration_db = db.query(models.Decoration).filter(models.Decoration.name == decoration.name).first()
-    if decoration_db:
-        raise HTTPException(status_code=404, detail="Decoration already exists")
-    decoration_db =  models.Decoration(name = decoration.name, cost = decoration.cost, allowed_position = decoration.allowed_position)
-    db.add(decoration_db)
-    db.commit()
-    return {"message": "New decoration added!"}
-
-
-@app.get("/recipes", response_model=List[schemas.Recipe])
-async def get_all_recipes(db: Session = Depends(get_db)):
-    """Get all recipes"""
-    recipes = db.query(models.Recipe).all()
-    return [schemas.Recipe(name = r.name, required_flowers=[f.id for f in r.required_flowers], required_potions=[p.id for p in r.required_potions], id = r.id)  for r in recipes]
-
-@app.get("/recipes/{recipe_id}", response_model=schemas.Recipe)
-async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
-    """Get information about recipe"""
-    db_recipe = db.query(models.Recipe).filter(models.Recipe.id == recipe_id).first()
-    if not db_recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-    return schemas.Recipe(name = db_recipe.name, required_flowers=[f.id for f in db_recipe.required_flowers], required_potions=[p.id for p in db_recipe.required_potions], id = db_recipe.id)
-
-@app.post("/recipes/add")
-async def add_recipe(recipe: schemas.RecipeCreate, db: Session = Depends(get_db)):
-    """Add a new recipe"""
-
-    recipe_db = db.query(models.Recipe).filter(models.Recipe.name == recipe.name).first()
-    if recipe_db:
-        raise HTTPException(status_code=404, detail="Recipe already exists")
-
-    flowers = []
-
-    for flower_id in recipe.required_flowers:
-        flower_db = db.query(models.Flower).get(flower_id)
-        if not flower_db:
-            raise HTTPException(status_code=404, detail="Flower for recipe not found")
-        flowers.append(flower_db)
-    potions = []
-    for potion_id in recipe.required_potions:
-        potion_db = db.query(models.Recipe).get(potion_id)
-        if not potion_db:
-            raise HTTPException(status_code=404, detail="Potion for recipe not found")
-        potions.append(potion_db)
-
-
-    recipe_db =  models.Recipe(name = recipe.name, required_potions = potions, required_flowers = flowers)
-    db.add(recipe_db)
-    db.commit()
-    return {"message": "New recipe added!"}
-
-
-@app.get("/flowers", response_model=List[schemas.Flower])
-async def get_all_flowers(db: Session = Depends(get_db)):
-    """Get all flowers"""
-    flowers = db.query(models.Flower).all()
-    return flowers
-@app.post("/flowers/add")
-async def add_flower(color_id: str, name:str, db: Session = Depends(get_db)):
-    """Add a new flower"""
-
-    flower_db = db.query(models.Flower).filter(models.Flower.color_id == color_id).first()
-    if flower_db:
-        raise HTTPException(status_code=404, detail="Flower with this color already exists")
-    flower_db =  models.Flower(color_id = color_id, name = name)
-    db.add(flower_db)
-    db.commit()
-    return {"message": "New flower added!"}
-
-@app.post("/flowers/identify", response_model=schemas.FlowerIdentificationResponse)
-async def identify_flower(image: UploadFile = File(...), db: Session = Depends(get_db)):
+async def identify_flower(image:UploadFile, db:Session):
     """Identify flower color from an uploaded image using AI vision"""
 
     # Validate that the uploaded file is an image
@@ -781,6 +682,109 @@ async def identify_flower(image: UploadFile = File(...), db: Session = Depends(g
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
+@app.get("/players/{player_id}/session/info", response_model=Optional[schemas.SessionInfo])
+async def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Info about a current session"""
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player or not player.session_id:
+        raise HTTPException(status_code=404, detail="Player not in a session")
+
+    # get session
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return schemas.SessionInfo(
+        recipe_id=session.recipe_id,
+        flower_id=player.assigned_flower,
+        code=session.code,
+        initial_player = session.initial_player,
+        flowers_collected=[f.id for f in session.flowers_collected],
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
+                                           picture=p.profile_picture) for p in session.players],
+        status=session.status
+    )
+
+
+#Overall
+@app.get("/decorations", response_model=List[schemas.DecorationShop])
+async def get_all_decorations(db: Session = Depends(get_db)):
+    """Get info about all decorations"""
+    return db.query(models.Decoration).all()
+
+@app.post("/decorations/add")
+async def add_decoration(decoration: schemas.DecorationCreate, db: Session = Depends(get_db)):
+    """Add a new decoration"""
+
+    decoration_db = db.query(models.Decoration).filter(models.Decoration.name == decoration.name).first()
+    if decoration_db:
+        raise HTTPException(status_code=404, detail="Decoration already exists")
+    decoration_db =  models.Decoration(name = decoration.name, cost = decoration.cost, allowed_position = decoration.allowed_position)
+    db.add(decoration_db)
+    db.commit()
+    return {"message": "New decoration added!"}
+
+
+@app.get("/recipes", response_model=List[schemas.Recipe])
+async def get_all_recipes(db: Session = Depends(get_db)):
+    """Get all recipes"""
+    recipes = db.query(models.Recipe).all()
+    return [schemas.Recipe(name = r.name, required_flowers=[f.id for f in r.required_flowers], required_potions=[p.id for p in r.required_potions], id = r.id)  for r in recipes]
+
+@app.get("/recipes/{recipe_id}", response_model=schemas.Recipe)
+async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
+    """Get information about recipe"""
+    db_recipe = db.query(models.Recipe).filter(models.Recipe.id == recipe_id).first()
+    if not db_recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    return schemas.Recipe(name = db_recipe.name, required_flowers=[f.id for f in db_recipe.required_flowers], required_potions=[p.id for p in db_recipe.required_potions], id = db_recipe.id)
+
+@app.post("/recipes/add")
+async def add_recipe(recipe: schemas.RecipeCreate, db: Session = Depends(get_db)):
+    """Add a new recipe"""
+
+    recipe_db = db.query(models.Recipe).filter(models.Recipe.name == recipe.name).first()
+    if recipe_db:
+        raise HTTPException(status_code=404, detail="Recipe already exists")
+
+    flowers = []
+
+    for flower_id in recipe.required_flowers:
+        flower_db = db.query(models.Flower).get(flower_id)
+        if not flower_db:
+            raise HTTPException(status_code=404, detail="Flower for recipe not found")
+        flowers.append(flower_db)
+    potions = []
+    for potion_id in recipe.required_potions:
+        potion_db = db.query(models.Recipe).get(potion_id)
+        if not potion_db:
+            raise HTTPException(status_code=404, detail="Potion for recipe not found")
+        potions.append(potion_db)
+
+
+    recipe_db =  models.Recipe(name = recipe.name, required_potions = potions, required_flowers = flowers)
+    db.add(recipe_db)
+    db.commit()
+    return {"message": "New recipe added!"}
+
+
+@app.get("/flowers", response_model=List[schemas.Flower])
+async def get_all_flowers(db: Session = Depends(get_db)):
+    """Get all flowers"""
+    flowers = db.query(models.Flower).all()
+    return flowers
+@app.post("/flowers/add")
+async def add_flower(color_id: str, name:str, db: Session = Depends(get_db)):
+    """Add a new flower"""
+
+    flower_db = db.query(models.Flower).filter(models.Flower.color_id == color_id).first()
+    if flower_db:
+        raise HTTPException(status_code=404, detail="Flower with this color already exists")
+    flower_db =  models.Flower(color_id = color_id, name = name)
+    db.add(flower_db)
+    db.commit()
+    return {"message": "New flower added!"}
+
 
 """ Probably unnecessary
 @app.get("/potions/{potion_id}", response_model=schemas.PotionBase)
@@ -801,13 +805,13 @@ async def get_all_potions(db: Session = Depends(get_db)):
 
 #for debug only
 @app.post("/debug/reset")
-def reset(db: Session = Depends(get_db)):
+async def reset(db: Session = Depends(get_db)):
     """Reset db to initial state"""
     seed_data.reset_and_seed_call()
     return {"message": "Done!"}
 #get all sessions (for debugging)
 @app.get("/debug/sessions", response_model=List[schemas.DebugSessionInfo])
-def get_all_sessions(db: Session = Depends(get_db)):
+async def get_all_sessions(db: Session = Depends(get_db)):
     """Get all sessions"""
     sessions = db.query(models.Session).all()
     return sessions
@@ -815,7 +819,7 @@ def get_all_sessions(db: Session = Depends(get_db)):
 #clean sessions (based on creation_time)
 
 @app.post("/debug/clearStaleSessions")
-def clear_stale_sessions(db: Session = Depends(get_db)):
+async def clear_stale_sessions(db: Session = Depends(get_db)):
     """Remove old sessions"""
     cutoff = datetime.now() - timedelta(days=1)
     # Fetch all sessions (you could optimize this by filtering in SQL if needed)
@@ -832,3 +836,62 @@ def clear_stale_sessions(db: Session = Depends(get_db)):
 
     db.commit()
     return removed_count
+
+#Right now: mocked up with flower_ids
+@app.post("/players/{player_id}/session/collect_flower_old/{flower_id}", response_model=Optional[schemas.SessionInfo])
+async def collect_flower_old( flower_id: int, player_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Collect flower with flower_id, if identifying doesn't work"""
+    #player
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player or not player.session_id:
+        raise HTTPException(status_code=404, detail="Player not in a session")
+
+    # get session
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status == 0:
+        raise HTTPException(status_code=400, detail="Waiting for other players")
+
+    if session.status == 2:
+        raise HTTPException(status_code=400, detail="Session already in brewing stage")
+
+    flower = db.query(models.Flower).filter(models.Flower.id == flower_id).first()
+    if not flower:
+        raise HTTPException(status_code=404, detail="Flower not found")
+
+    # Check if flower color matches player's shears
+    if flower_id != player.assigned_flower:
+        raise HTTPException(status_code=400, detail="You cannot collect this flower!")
+
+    # Add flower to session's collected flowers
+    recipe = db.query(models.Recipe).get(session.recipe_id)
+    recipe_flower_ids = {f.id for f in recipe.required_flowers}
+
+    if flower_id not in recipe_flower_ids:
+        raise HTTPException(status_code=400, detail="This flower is not required for the recipe")
+
+    session.flowers_collected.append(flower)
+
+    # Check if recipe requirements are met
+    recipe = session.recipe
+    required_ids = {f.id for f in recipe.required_flowers}
+    collected_ids = {f.id for f in session.flowers_collected}
+    if required_ids.issubset(collected_ids):
+        session.status = 2  # Complete
+        for potion in [p.id for p in recipe.required_potions]:
+            remove_potion_from_inventory_func(session.initial_player,potion, db)
+
+    db.commit()
+    db.refresh(session)
+    return schemas.SessionInfo(
+        recipe_id=session.recipe_id,
+        flower_id=player.assigned_flower,
+        code=session.code,
+        initial_player=session.initial_player,
+        flowers_collected=[f.id for f in session.flowers_collected],
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
+                                           picture=p.profile_picture) for p in session.players],
+        status=session.status
+    )
