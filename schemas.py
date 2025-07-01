@@ -83,6 +83,10 @@ class SessionBase(BaseModel):
     class Config:
         orm_mode = True
 
+class PlayerLocation(BaseModel):
+    initial_lat: float
+    initial_lng: float
+
 class SessionCreate(BaseModel):
     player_id: uuid.UUID
     initial_lat: float

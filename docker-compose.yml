@@ -23,8 +23,8 @@ services:
       - "8169:8000"
     environment:
       DATABASE_URL: postgresql://postgres:password@db:5432/grimoire_db
-    env_file:
-      - .env
+#    env_file:
+#      - .env
     depends_on:
       db:
         condition: service_healthy

@@ -304,6 +304,33 @@ async def get_used_decorations(player_id: uuid.UUID, db: Session = Depends(get_d
 
 
 """Sessions"""
+#update location
+@app.put("/players/{player_id}/session/update_loc", response_model=schemas.SessionInfo)
+def update_loc_session(player_id: uuid.UUID, data: schemas.PlayerLocation, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if not player.session_id:
+        raise HTTPException(status_code=400, detail="Player not in a session")
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if player_id != session.initial_player:
+        raise HTTPException(status_code=400, detail="Player is not initial player in this session")
+    session.initial_lat = data.initial_lat
+    session.initial_lng = data.initial_lng
+    db.commit()
+    db.refresh(session)
+    return schemas.SessionInfo(
+        recipe_id=session.recipe_id,
+        flower_id=player.assigned_flower,
+        code=session.code,
+        initial_player=session.initial_player,
+        flowers_collected=[f.id for f in session.flowers_collected],
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
+                                           picture=p.profile_picture) for p in session.players],
+        status=session.status
+    )
 
 #create session
 @app.post("/session/create", response_model=schemas.SessionInfo)
@@ -344,6 +371,11 @@ def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
 
     while db.query(models.Session).filter_by(code=join_code).first():
         join_code = utils.generate_code()
+    status = 0
+
+    #change status to collecting
+    if not available_flowers:
+        status = 1
 
     new_session = models.Session(
         recipe_id=data.recipe_id,
@@ -351,7 +383,8 @@ def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
         flowers_available=available_flowers,
         initial_lat=data.initial_lat,
         initial_lng=data.initial_lng,
-        initial_player = data.player_id
+        initial_player = data.player_id,
+        status = status
     )
     db.add(new_session)
     db.flush()
@@ -367,7 +400,7 @@ def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
         flowers_collected = [],
         initial_player = new_session.initial_player,
         players = [schemas.PlayerSessionInfo(player_id = p.player_id, name = p.name, assigned_flower=p.assigned_flower, picture = p.profile_picture)  for p in new_session.players],
-        status = 0
+        status = new_session.status
     )
 
 #Join session
@@ -384,21 +417,28 @@ def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
     session = db.query(models.Session).filter(models.Session.code == data.code).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status == 1:
-        raise HTTPException(status_code=400, detail="Session already in brewing stage")
+    if session.status == 1 or session.status == 2:
+        raise HTTPException(status_code=400, detail="Session already in collecting or brewing stage")
+    #ambiguous
+    if not session.flowers_available:
+        raise HTTPException(status_code=400, detail="No flowers available")
     #TODO: what if players moved? Should we always update with position of first player or let it be like that?
     if not utils.is_within_distance(data.lat, data.lng, session.initial_lat, session.initial_lng):
         raise HTTPException(status_code=400, detail="Too far from session")
 
-    if not session.flowers_available:
-        raise HTTPException(status_code=400, detail="No flowers available")
+
 
     assigned_flower = session.flowers_available[0]
     session.flowers_available = session.flowers_available[1:]
     player.session_id = session.session_id
     player.assigned_flower = assigned_flower
 
+
+    #change to collecting
+    if not session.flowers_available:
+        session.status = 1
     db.commit()
+    db.refresh(session)
 
     return schemas.SessionInfo(
         recipe_id=session.recipe_id,
@@ -408,7 +448,7 @@ def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
         flowers_collected=[f.id for f in session.flowers_collected],
         players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
                                            picture=p.profile_picture) for p in session.players],
-        status=0
+        status=session.status
     )
 
 
@@ -424,7 +464,7 @@ def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if player.shears_color:
+    if player.assigned_flower:
         session.flowers_available.append(player.assigned_flower)
 
     player.session_id = None
@@ -436,10 +476,14 @@ def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
         db.commit()
         return {"message": "Left session successfully"}
     #if initial player leaves during collection, stop session
-    if session.initial_player == player.player_id and session.status == 0:
+    if session.initial_player == player.player_id and (session.status == 0 or session.status == 1):
         db.delete(session)
         db.commit()
         return {"message": "Left session successfully. It was initial player, so the session was deleted"}
+    if session.status == 1:
+        session.status = 0
+        db.commit()
+        return {"message": "Player left. Other player will return to lobby"}
     return {"message": "Left session successfully"}
 
 #Right now: mocked up with flower_ids
@@ -456,7 +500,10 @@ def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if session.status == 1:
+    if session.status == 0:
+        raise HTTPException(status_code=400, detail="Waiting for other players")
+
+    if session.status == 2:
         raise HTTPException(status_code=400, detail="Session already in brewing stage")
 
     flower = db.query(models.Flower).filter(models.Flower.id == flower_id).first()
@@ -481,7 +528,7 @@ def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(
     required_ids = {f.id for f in recipe.required_flowers}
     collected_ids = {f.id for f in session.flowers_collected}
     if required_ids.issubset(collected_ids):
-        session.status = 1  # Complete
+        session.status = 2  # Complete
         for potion in [p.id for p in recipe.required_potions]:
             remove_potion_from_inventory_func(session.initial_player,potion, db)
 
