@@ -895,3 +895,85 @@ async def collect_flower_old( flower_id: int, player_id: uuid.UUID, db: Session 
                                            picture=p.profile_picture) for p in session.players],
         status=session.status
     )
+
+@app.post("/debug/identify")
+async def identify_flower(image: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Identify flower color from an uploaded image using AI vision"""
+
+    # Validate that the uploaded file is an image
+    if not image.content_type or not image.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    try:
+        # Read the image file
+        image_bytes = await image.read()
+
+        # Convert image to base64 for OpenAI API
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        # Get valid colors dynamically from the database
+        flowers = db.query(models.Flower).all()
+        valid_colors = list(set(flower.color_id for flower in flowers))
+
+        if not valid_colors:
+            raise HTTPException(status_code=500, detail="No flower colors found in database")
+
+        # Parse template and schema
+        messages, response_format = parse_template_and_schema(
+            template="flower_identification_prompt.jinja",
+            schema="flower_identification_schema.json",
+            variables={"valid_colors": valid_colors}
+        )
+
+        # Add the image to the user message
+        user_message = messages[-1]  # Last message should be the user message
+        user_message["content"] = [
+            {
+                "type": "text",
+                "text": user_message["content"]
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.content_type};base64,{image_base64}"
+                }
+            }
+        ]
+
+        # Get OpenAI API key from environment
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            print("!!!!!!!!!!!!!!!!OpenAI API key not configured")
+            return schemas.FlowerIdentificationResponse(
+                color_id="red"
+            )
+
+        # Initialize OpenAI client
+        client = openai.OpenAI(api_key=api_key)
+
+        # Call OpenAI API with vision capabilities
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=messages,
+            response_format=response_format,
+            max_tokens=300
+        )
+
+        # Parse the response
+        result = response.choices[0].message.content
+
+        # The response should be JSON thanks to the structured output
+        import json
+        parsed_result = json.loads(result)
+
+        if parsed_result.get("error") and parsed_result.get("error") != "":
+            raise HTTPException(status_code=400, detail=parsed_result.get("error"))
+
+        return schemas.FlowerIdentificationResponse(
+            color_id=parsed_result.get("color_id")
+        )
+
+    except openai.APIError as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
