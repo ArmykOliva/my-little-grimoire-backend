@@ -11,6 +11,12 @@ import uuid
 ## These are just samples of how stuff can look like, we should definitely reevaluate and refactor them one by one.
 
 # Player Schemas
+class PlayerRegister(BaseModel):
+    user_name: str
+    password: str
+class PlayerLogin(BaseModel):
+    user_name: str
+    password: str
 
 class PlayerBase(BaseModel):
     name: Optional[str] = None

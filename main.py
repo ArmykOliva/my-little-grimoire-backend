@@ -27,14 +27,49 @@ app = FastAPI(title="My Little Grimoire API", version="1.0.0")
 async def root():
     return {"message": "Welcome to My Little Grimoire API"}
 
+#login endpoints
+@app.post("/register", response_model=schemas.Player)
+async def register_player(reg_data: schemas.PlayerRegister, db: Session = Depends(get_db)):
+    existing = db.query(models.PlayerAccount).filter(models.PlayerAccount.user_name == reg_data.user_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already taken.")
+
+    # Create Player
+    new_player = models.Player()
+    db.add(new_player)
+    db.flush()  #
+
+    # Create Account
+    account = models.PlayerAccount(
+        user_name=reg_data.user_name,
+        password_hash=utils.hash_password(reg_data.password),
+        player_id=new_player.id
+    )
+    db.add(account)
+    db.commit()
+
+    db_grimoire = models.Grimoire(player=new_player)
+    db.add(db_grimoire)
+    db.commit()
+    db.refresh(new_player)
+    return new_player
+
+@app.post("/login", response_model=schemas.Player)
+async def login_player(login_data: schemas.PlayerLogin, db: Session = Depends(get_db)):
+    account = db.query(models.PlayerAccount).filter(models.PlayerAccount.user_name == login_data.user_name).first()
+    if not account or not utils.verify_password(login_data.password, account.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+    player = db.query(models.Player).filter(models.Player.id == account.player_id).first()
+    return player
+
 # Playerendpoints
 @app.get("/players", response_model=List[schemas.Player])
 async def get_all_players(db: Session = Depends(get_db)):
     players = db.query(models.Player).all()
     return players
-@app.post("/players/create", response_model=schemas.Player)
-async def create_player(player: schemas.PlayerCreate, db: Session = Depends(get_db)):
-    """Create a new player with their grimoire"""
+@app.post("/players/create_noAcc", response_model=schemas.Player)
+async def create_player_noAcc(player: schemas.PlayerCreate, db: Session = Depends(get_db)):
+    """Create a new player with their grimoire. Created without link to account"""
 
     db_player = models.Player(
         name=player.name,
@@ -48,6 +83,21 @@ async def create_player(player: schemas.PlayerCreate, db: Session = Depends(get_
     db.refresh(db_player)
     return db_player
 
+@app.post("/players/{player_id}/updateData", response_model=schemas.Player)
+async def update_player_data(player_id: uuid.UUID, player_data: schemas.PlayerBase, db: Session = Depends(get_db)):
+    """Use this when just registered or if player changes his data"""
+    db_player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not db_player:
+        raise HTTPException(status_code=404, detail="Player not found.")
+
+    if player_data.name:
+        db_player.name = player_data.name
+    if player_data.picture is not None:
+        db_player.profile_picture = player_data.picture
+
+    db.commit()
+    db.refresh(db_player)
+    return db_player
 @app.get("/players/{player_id}", response_model=schemas.Player)
 async def get_player(player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Get player by UUID"""

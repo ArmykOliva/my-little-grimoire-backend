@@ -48,9 +48,15 @@ def random_name():
 
 
 class PlayerAccount(Base):
-    __tablename__ = "playeraccount"
-    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    __tablename__ = "playeraccounts"
 
+    id = Column(Integer, primary_key=True, index=True)
+    user_name = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+
+    # Relationship to Player
+    player_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, unique=True)
+    player = relationship("Player", backref="account", uselist=False)
 class Player(Base):
     __tablename__ = "players"
 
