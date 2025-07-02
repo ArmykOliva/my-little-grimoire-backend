@@ -27,11 +27,15 @@ def create_sample_data():
         print("Sample decorations added successfully")
         # Create sample flowers
         sample_flowers = [
-            {"color_id": "red"},
-            {"color_id": "blue"},
-            {"color_id": "purple"},
-            {"color_id": "gold"},
-            {"color_id": "green"}
+            {"color_id": "blue", "name": "Mystic Azurea"},
+            {"color_id": "coral", "name": "Coralia Blossom"},
+            {"color_id": "lilac", "name": "Moonbell"},
+            {"color_id": "orange", "name": "Cinderflare"},
+            {"color_id": "pink", "name": "Feypetal"},
+            {"color_id": "purple", "name": "Vesperthorn"},
+            {"color_id": "red", "name": "Sanguine Rose"},
+            {"color_id": "white", "name": "Angelbud"},
+            {"color_id": "yellow", "name": "Solaria's Crown"},
         ]
 
         flower_map = {}
@@ -45,15 +49,15 @@ def create_sample_data():
         print("Flowers added!")
         # Create sample recipes
 
-        healing_potion = models.Recipe(name = "Healing Potion", required_flowers=[flower_map["red"], flower_map["green"]])
+        healing_potion = models.Recipe(name = "Healing Potion", required_flowers=[flower_map["red"], flower_map["lilac"]])
         db.add(healing_potion)
         db.commit()
-        mana_potion = models.Recipe(name = "Mana Potion", required_flowers=[flower_map["blue"], flower_map["purple"]])
+        mana_potion = models.Recipe(name = "Mana Potion", required_flowers=[flower_map["white"], flower_map["purple"]])
         db.add(mana_potion)
         db.commit()
         legendary_elixir = models.Recipe(
             name="Legendary Elixir",
-            required_flowers=[flower_map["gold"]],
+            required_flowers=[flower_map["yellow"]],
             required_potions=[healing_potion, mana_potion])
         db.add(legendary_elixir)
         db.commit()
@@ -348,7 +352,9 @@ def reset_db():
                         grimoire_recipes,
                         recipes,
                         decorations,
-                        flowers
+                        flowers,
+                        player_followers,
+                        playeraccounts
                     RESTART IDENTITY CASCADE;
                         """))
         db.commit()

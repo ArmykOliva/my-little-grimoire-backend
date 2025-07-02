@@ -8,3 +8,4 @@ python-multipart
 geopy
 olingo-llm-parser
 openai
+passlib[bcrypt]

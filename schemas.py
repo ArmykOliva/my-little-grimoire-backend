@@ -9,6 +9,12 @@ import uuid
 ## These are just samples of how stuff can look like, we should definitely reevaluate and refactor them one by one.
 
 # Player Schemas
+class PlayerRegister(BaseModel):
+    user_name: str
+    password: str
+class PlayerLogin(BaseModel):
+    user_name: str
+    password: str
 
 class PlayerBase(BaseModel):
     name: Optional[str] = None
@@ -22,15 +28,18 @@ class Player(PlayerBase):
         orm_mode = True
 class PlayerCreate(PlayerBase):
     pass
-
+class PlayerLog(BaseModel):
+    name: str
+    password: str
 
 
 #Flowers
-#TODO: how the flower recognition function should work and what kind of flower it will return
+
 
 class Flower (BaseModel):
     id: int
     color_id: str
+    name: str
     class Config:
         orm_mode = True
 
@@ -78,6 +87,10 @@ class SessionBase(BaseModel):
     class Config:
         orm_mode = True
 
+class PlayerLocation(BaseModel):
+    initial_lat: float
+    initial_lng: float
+
 class SessionCreate(BaseModel):
     player_id: uuid.UUID
     initial_lat: float
@@ -99,14 +112,15 @@ class PlayerSessionInfo(BaseModel):
     player_id: uuid.UUID
     name: str
     picture: Optional[int] = 0
-    shears_color: str
+    assigned_flower: int
     class Config:
         orm_mode = True
 class SessionInfo(BaseModel):
     recipe_id: int
-    color_id: Optional[str]
+    flower_id: Optional[int]
     #5-letter-string
     code: str
+    initial_player: uuid.UUID
     players: List[PlayerSessionInfo] =[]
     flowers_collected: List[int]
     status: int
@@ -118,6 +132,7 @@ class DebugSessionInfo(BaseModel):
     recipe: RecipeDebug
     status: int
     flowers_collected: List[Flower]
+    initial_player: uuid.UUID
     players: List[PlayerSessionInfo]
     started_at: datetime
     class Config:

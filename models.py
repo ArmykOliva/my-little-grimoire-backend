@@ -43,9 +43,29 @@ session_flower_association = Table(
     Column("flower_id", ForeignKey("flowers.id"), primary_key=True),
 )
 
+
+class PlayerFollower(Base):
+    __tablename__ = "player_followers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    follower_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False)
+    followed_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False)
+
 def random_name():
     return random.choice(["Alex", "Krystof", "Ben", "Maxi", "Heloisa"])
 
+
+class PlayerAccount(Base):
+    __tablename__ = "playeraccounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_name = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+
+    # Relationship to Player
+    player_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, unique=True)
+    player = relationship("Player", backref="account", uselist=False)
 class Player(Base):
     __tablename__ = "players"
 
@@ -70,7 +90,7 @@ class Player(Base):
 
     #session
     session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="SET NULL"), nullable=True)
-    shears_color = Column(String, nullable=True)
+    assigned_flower = Column(Integer, nullable=True)
 
     # Relationships
     session = relationship(
@@ -130,7 +150,7 @@ class Flower(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     color_id = Column(String, nullable=False, default = "red")  # Unity color identifier
-
+    name = Column(String, default = "Flower Name")
     #Every other info is saved on client side only
 
 class Session(Base):
@@ -140,7 +160,7 @@ class Session(Base):
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
     status = Column(Integer, default=0)  # 0 = in progress, 1 = ended
     code = Column(String(5), unique=True, nullable=False)  # 5-letter join code
-    shears_available = Column(MutableList.as_mutable(JSON))  # List of color_ids
+    flowers_available = Column(MutableList.as_mutable(JSON))  # List of color_ids
     started_at = Column(DateTime, default=datetime.now)
     initial_lat = Column(Float, nullable=True)
     initial_lng = Column(Float, nullable=True)
