@@ -1,5 +1,3 @@
-
-
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -166,6 +164,74 @@ class DecorationUsed(BaseModel):
 class FlowerIdentificationResponse(BaseModel):
     color_id: Optional[str] = None
     error: Optional[str] = None
+    
+    class Config:
+        orm_mode = True
+
+
+# Trading System Schemas
+class PotionOffer(BaseModel):
+    potion_id: int
+    amount: int
+
+class TradeOfferCreate(BaseModel):
+    money_amount: int = 0
+    potions_offered: List[PotionOffer] = []
+    
+class TradeOfferResponse(BaseModel):
+    id: int
+    trade_id: int
+    offerer_id: uuid.UUID
+    offerer_name: str
+    money_amount: int
+    potions_offered: List[PotionOffer]
+    status: str
+    is_seller_offer: bool
+    created_at: datetime
+    
+    class Config:
+        orm_mode = True
+
+class TradeCreate(BaseModel):
+    item_id: int  # potion_id being sold
+    item_amount: int = 1
+    initial_price: int
+    
+class TradeResponse(BaseModel):
+    id: int
+    seller_id: uuid.UUID
+    seller_name: str
+    item_type: str
+    item_id: int
+    item_name: str
+    item_amount: int
+    initial_price: int
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    current_offer: Optional[TradeOfferResponse] = None
+    offer_count: int = 0
+    
+    class Config:
+        orm_mode = True
+
+class TradeBoardResponse(BaseModel):
+    trades: List[TradeResponse]
+    total_count: int
+
+class TradeDetailResponse(BaseModel):
+    id: int
+    seller_id: uuid.UUID
+    seller_name: str
+    item_type: str
+    item_id: int
+    item_name: str
+    item_amount: int
+    initial_price: int
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    offers: List[TradeOfferResponse]
     
     class Config:
         orm_mode = True
