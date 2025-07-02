@@ -27,14 +27,49 @@ app = FastAPI(title="My Little Grimoire API", version="1.0.0")
 async def root():
     return {"message": "Welcome to My Little Grimoire API"}
 
+#login endpoints
+@app.post("/register", response_model=schemas.Player)
+async def register_player(reg_data: schemas.PlayerRegister, db: Session = Depends(get_db)):
+    existing = db.query(models.PlayerAccount).filter(models.PlayerAccount.user_name == reg_data.user_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already taken.")
+
+    # Create Player
+    new_player = models.Player()
+    db.add(new_player)
+    db.flush()  #
+
+    # Create Account
+    account = models.PlayerAccount(
+        user_name=reg_data.user_name,
+        password_hash=utils.hash_password(reg_data.password),
+        player_id=new_player.id
+    )
+    db.add(account)
+    db.commit()
+
+    db_grimoire = models.Grimoire(player=new_player)
+    db.add(db_grimoire)
+    db.commit()
+    db.refresh(new_player)
+    return new_player
+
+@app.post("/login", response_model=schemas.Player)
+async def login_player(login_data: schemas.PlayerLogin, db: Session = Depends(get_db)):
+    account = db.query(models.PlayerAccount).filter(models.PlayerAccount.user_name == login_data.user_name).first()
+    if not account or not utils.verify_password(login_data.password, account.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+    player = db.query(models.Player).filter(models.Player.id == account.player_id).first()
+    return player
+
 # Playerendpoints
 @app.get("/players", response_model=List[schemas.Player])
 async def get_all_players(db: Session = Depends(get_db)):
     players = db.query(models.Player).all()
     return players
-@app.post("/players/create", response_model=schemas.Player)
-async def create_player(player: schemas.PlayerCreate, db: Session = Depends(get_db)):
-    """Create a new player with their grimoire"""
+@app.post("/players/create_noAcc", response_model=schemas.Player)
+async def create_player_noAcc(player: schemas.PlayerCreate, db: Session = Depends(get_db)):
+    """Create a new player with their grimoire. Created without link to account"""
 
     db_player = models.Player(
         name=player.name,
@@ -48,6 +83,21 @@ async def create_player(player: schemas.PlayerCreate, db: Session = Depends(get_
     db.refresh(db_player)
     return db_player
 
+@app.post("/players/{player_id}/updateData", response_model=schemas.Player)
+async def update_player_data(player_id: uuid.UUID, player_data: schemas.PlayerBase, db: Session = Depends(get_db)):
+    """Use this when just registered or if player changes his data"""
+    db_player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not db_player:
+        raise HTTPException(status_code=404, detail="Player not found.")
+
+    if player_data.name:
+        db_player.name = player_data.name
+    if player_data.picture is not None:
+        db_player.profile_picture = player_data.picture
+
+    db.commit()
+    db.refresh(db_player)
+    return db_player
 @app.get("/players/{player_id}", response_model=schemas.Player)
 async def get_player(player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Get player by UUID"""
@@ -55,6 +105,81 @@ async def get_player(player_id: uuid.UUID, db: Session = Depends(get_db)):
     if not db_player:
         raise HTTPException(status_code=404, detail="Player not found")
     return db_player
+
+
+@app.post("/players/{player_id}/follow/{followed_id}")
+async def follow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
+
+    if player_id == followed_id:
+        raise HTTPException(status_code=404, detail="Cannot follow yourself")
+    follower = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    followed = db.query(models.Player).filter(models.Player.player_id ==followed_id).first()
+
+    if not follower or not followed:
+        raise HTTPException(status_code=404, detail="Player(s) not found")
+
+    existing = db.query(models.PlayerFollower).filter_by(
+        follower_id=follower.id,
+        followed_id=followed.id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Already following this player")
+
+    follow = models.PlayerFollower(
+        follower_id=follower.id,
+        followed_id=followed.id
+    )
+    db.add(follow)
+    db.commit()
+    return {"message": "Followed successfully"}
+
+
+@app.post("/players/{player_id}/unfollow/{followed_id}")
+async def unfollow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
+    follower = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    followed = db.query(models.Player).filter(models.Player.player_id == followed_id).first()
+
+    if not follower or not followed:
+        raise HTTPException(status_code=404, detail="Player(s) not found")
+
+    deleted = db.query(models.PlayerFollower).filter_by(
+        follower_id=follower.id,
+        followed_id=followed.id
+    ).delete()
+
+    if not deleted:
+        raise HTTPException(status_code=400, detail="Not following this player")
+
+    db.commit()
+    return {"message": "Unfollowed successfully"}
+
+@app.get("/players/{player_id}/followers", response_model=List[schemas.Player])
+async def get_followers(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    followers = (
+        db.query(models.Player)
+        .join(models.PlayerFollower, models.Player.id == models.PlayerFollower.follower_id)
+        .filter(models.PlayerFollower.followed_id == player.id)
+        .all()
+    )
+    return followers
+
+@app.get("/players/{player_id}/following", response_model=List[schemas.Player])
+async def get_following(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    following = (
+        db.query(models.Player)
+        .join(models.PlayerFollower, models.Player.id == models.PlayerFollower.followed_id)
+        .filter(models.PlayerFollower.follower_id == player.id)
+        .all()
+    )
+    return following
 
 #Customers
 @app.put("/players/{player_id}/customer/{customer_id}", response_model=schemas.Player)
@@ -137,8 +262,6 @@ async def lock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Sessi
     else:
         raise HTTPException(status_code=404, detail="Recipe has not been unlocked yet")
 
-
-
 # Inventory
 @app.get("/players/{player_id}/inventory", response_model=schemas.Inventory)
 async def get_inventory(player_id: uuid.UUID, db: Session = Depends(get_db)):
@@ -217,7 +340,7 @@ def remove_potion_from_inventory_func(player_id: uuid.UUID, potion_id: int, db: 
 # Decorations
 
 @app.post("/players/{player_id}/decorations/buy/{decoration_id}", response_model=schemas.DecorationInventory)
-def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
+async def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
     decoration = db.query(models.Decoration).get(decoration_id)
     if not decoration:
         raise HTTPException(404, "Decoration not found")
@@ -245,7 +368,7 @@ def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depen
 
 #Get decorations
 @app.get("/players/{player_id}/decorations", response_model=schemas.DecorationInventory)
-def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
+async def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -255,7 +378,7 @@ def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
                      inventory_decorations])
 
 @app.post("/players/{player_id}/decorations/place/{decoration_id}")
-def place_decoration(player_id: uuid.UUID, decoration_id: int, position: int, db: Session = Depends(get_db)):
+async def place_decoration(player_id: uuid.UUID, decoration_id: int, position: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -306,17 +429,42 @@ async def get_used_decorations(player_id: uuid.UUID, db: Session = Depends(get_d
 
 
 """Sessions"""
+#update location
+@app.put("/players/{player_id}/session/update_loc", response_model=schemas.SessionInfo)
+async def update_loc_session(player_id: uuid.UUID, data: schemas.PlayerLocation, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if not player.session_id:
+        raise HTTPException(status_code=400, detail="Player not in a session")
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if player_id != session.initial_player:
+        raise HTTPException(status_code=400, detail="Player is not initial player in this session")
+    session.initial_lat = data.initial_lat
+    session.initial_lng = data.initial_lng
+    db.commit()
+    db.refresh(session)
+    return schemas.SessionInfo(
+        recipe_id=session.recipe_id,
+        flower_id=player.assigned_flower,
+        code=session.code,
+        initial_player=session.initial_player,
+        flowers_collected=[f.id for f in session.flowers_collected],
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
+                                           picture=p.profile_picture) for p in session.players],
+        status=session.status
+    )
 
 #create session
 @app.post("/session/create", response_model=schemas.SessionInfo)
-def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
+async def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
     if player.session_id:
         raise HTTPException(status_code=400, detail="Player already in a session")
-
-
     recipe = db.query(models.Recipe).filter(models.Recipe.id == data.recipe_id).first()
 
     if not recipe:
@@ -337,45 +485,52 @@ def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
          raise HTTPException(status_code=400, detail="Player is missing required potions to start this recipe")
 
     #Extract flower color_ids from required flowers
-    available_colors = available_colors = list({flower.color_id for flower in recipe.required_flowers})
+    available_flowers = list({flower.id for flower in recipe.required_flowers})
 
-    if not available_colors:
+    if not available_flowers:
         raise HTTPException(status_code=400, detail="No available colors in recipe")
 
-    assigned_color = available_colors.pop(0)
+    assigned_flower = available_flowers.pop(0)
 
     join_code = utils.generate_code()
 
     while db.query(models.Session).filter_by(code=join_code).first():
         join_code = utils.generate_code()
+    status = 0
+
+    #change status to collecting
+    if not available_flowers:
+        status = 1
 
     new_session = models.Session(
         recipe_id=data.recipe_id,
         code=join_code,
-        shears_available=available_colors,
+        flowers_available=available_flowers,
         initial_lat=data.initial_lat,
         initial_lng=data.initial_lng,
-        initial_player = data.player_id
+        initial_player = data.player_id,
+        status = status
     )
     db.add(new_session)
     db.flush()
 
     player.session_id = new_session.session_id
-    player.shears_color = assigned_color
+    player.assigned_flower = assigned_flower
     db.commit()
 
     return schemas.SessionInfo(
         recipe_id = data.recipe_id,
-        color_id=assigned_color,
+        flower_id=assigned_flower,
         code=join_code,
         flowers_collected = [],
-        players = [schemas.PlayerSessionInfo(player_id = p.player_id, name = p.name, shears_color=p.shears_color, picture = p.profile_picture)  for p in new_session.players],
-        status = 0
+        initial_player = new_session.initial_player,
+        players = [schemas.PlayerSessionInfo(player_id = p.player_id, name = p.name, assigned_flower=p.assigned_flower, picture = p.profile_picture)  for p in new_session.players],
+        status = new_session.status
     )
 
 #Join session
 @app.post("/session/join", response_model=schemas.SessionInfo)
-def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
+async def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
     #get player
     player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
     if not player:
@@ -387,36 +542,44 @@ def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
     session = db.query(models.Session).filter(models.Session.code == data.code).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status == 1:
-        raise HTTPException(status_code=400, detail="Session already in brewing stage")
+    if session.status == 1 or session.status == 2:
+        raise HTTPException(status_code=400, detail="Session already in collecting or brewing stage")
+    #ambiguous
+    if not session.flowers_available:
+        raise HTTPException(status_code=400, detail="No flowers available")
     #TODO: what if players moved? Should we always update with position of first player or let it be like that?
     if not utils.is_within_distance(data.lat, data.lng, session.initial_lat, session.initial_lng):
         raise HTTPException(status_code=400, detail="Too far from session")
 
-    if not session.shears_available:
-        raise HTTPException(status_code=400, detail="No shears/colors available")
 
-    assigned_color = session.shears_available[0]
-    session.shears_available = session.shears_available[1:]
+
+    assigned_flower = session.flowers_available[0]
+    session.flowers_available = session.flowers_available[1:]
     player.session_id = session.session_id
-    player.shears_color = assigned_color
+    player.assigned_flower = assigned_flower
 
+
+    #change to collecting
+    if not session.flowers_available:
+        session.status = 1
     db.commit()
+    db.refresh(session)
 
     return schemas.SessionInfo(
         recipe_id=session.recipe_id,
-        color_id=assigned_color,
+        flower_id=assigned_flower,
+        initial_player = session.initial_player,
         code=session.code,
         flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, shears_color=p.shears_color,
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
                                            picture=p.profile_picture) for p in session.players],
-        status=0
+        status=session.status
     )
 
 
 #Leave all sessions
 @app.post("/players/{player_id}/leaveSession")
-def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
+async def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
@@ -426,11 +589,11 @@ def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if player.shears_color:
-        session.shears_available.append(player.shears_color)
+    if player.assigned_flower:
+        session.flowers_available.append(player.assigned_flower)
 
     player.session_id = None
-    player.shears_color = None
+    player.assigned_flower = None
     db.commit()
     remaining_players = session.players
     if not remaining_players:
@@ -438,15 +601,19 @@ def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
         db.commit()
         return {"message": "Left session successfully"}
     #if initial player leaves during collection, stop session
-    if session.initial_player == player.player_id and session.status == 0:
+    if session.initial_player == player.player_id and (session.status == 0 or session.status == 1):
         db.delete(session)
         db.commit()
         return {"message": "Left session successfully. It was initial player, so the session was deleted"}
+    if session.status == 1:
+        session.status = 0
+        db.commit()
+        return {"message": "Player left. Other player will return to lobby"}
     return {"message": "Left session successfully"}
 
-#Right now: mocked up with flower_ids
-@app.post("/players/{player_id}/session/collect_flower/{flower_id}", response_model=Optional[schemas.SessionInfo])
-def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(get_db)):
+
+@app.post("/players/{player_id}/session/collect_flower", response_model=Optional[schemas.SessionInfo])
+async def collect_flower(player_id: uuid.UUID, image: UploadFile = File(...), db: Session = Depends(get_db)):
     """Collect flower"""
     #player
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
@@ -458,16 +625,25 @@ def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if session.status == 1:
+    if session.status == 0:
+        raise HTTPException(status_code=400, detail="Waiting for other players")
+
+    if session.status == 2:
         raise HTTPException(status_code=400, detail="Session already in brewing stage")
 
-    flower = db.query(models.Flower).filter(models.Flower.id == flower_id).first()
+    flower_response = await identify_flower(image, db)
+
+    if flower_response.error:
+        raise HTTPException(status_code=404, detail=flower_response.error)
+
+    flower = db.query(models.Flower).filter(models.Flower.color_id == flower_response.color_id).first()
+
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")
 
     # Check if flower color matches player's shears
-    if flower.color_id != player.shears_color:
-        raise HTTPException(status_code=400, detail="Flower color doesn't match your shears color")
+    if flower.id != player.assigned_flower:
+        raise HTTPException(status_code=400, detail="You cannot collect this flower!")
 
     # Add flower to session's collected flowers
     recipe = db.query(models.Recipe).get(session.recipe_id)
@@ -483,7 +659,7 @@ def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(
     required_ids = {f.id for f in recipe.required_flowers}
     collected_ids = {f.id for f in session.flowers_collected}
     if required_ids.issubset(collected_ids):
-        session.status = 1  # Complete
+        session.status = 2  # Complete
         for potion in [p.id for p in recipe.required_potions]:
             remove_potion_from_inventory_func(session.initial_player,potion, db)
 
@@ -491,17 +667,98 @@ def collect_flower( flower_id: int, player_id: uuid.UUID, db: Session = Depends(
     db.refresh(session)
     return schemas.SessionInfo(
         recipe_id=session.recipe_id,
-        color_id=player.shears_color,
+        flower_id=player.assigned_flower,
         code=session.code,
+        initial_player=session.initial_player,
         flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, shears_color=p.shears_color,
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
                                            picture=p.profile_picture) for p in session.players],
         status=session.status
     )
 
+async def identify_flower(image:UploadFile, db:Session):
+    """Identify flower color from an uploaded image using AI vision"""
+
+    # Validate that the uploaded file is an image
+    if not image.content_type or not image.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    try:
+        # Read the image file
+        image_bytes = await image.read()
+
+        # Convert image to base64 for OpenAI API
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        # Get valid colors dynamically from the database
+        flowers = db.query(models.Flower).all()
+        valid_colors = list(set(flower.color_id for flower in flowers))
+
+        if not valid_colors:
+            raise HTTPException(status_code=500, detail="No flower colors found in database")
+
+        # Parse template and schema
+        messages, response_format = parse_template_and_schema(
+            template="flower_identification_prompt.jinja",
+            schema="flower_identification_schema.json",
+            variables={"valid_colors": valid_colors}
+        )
+
+        # Add the image to the user message
+        user_message = messages[-1]  # Last message should be the user message
+        user_message["content"] = [
+            {
+                "type": "text",
+                "text": user_message["content"]
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.content_type};base64,{image_base64}"
+                }
+            }
+        ]
+
+        # Get OpenAI API key from environment
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            print("!!!!!!!!!!!!!!!!OpenAI API key not configured")
+            return schemas.FlowerIdentificationResponse(
+                color_id="red"
+            )
+
+        # Initialize OpenAI client
+        client = openai.OpenAI(api_key=api_key)
+
+        # Call OpenAI API with vision capabilities
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=messages,
+            response_format=response_format,
+            max_tokens=300
+        )
+
+        # Parse the response
+        result = response.choices[0].message.content
+
+        # The response should be JSON thanks to the structured output
+        import json
+        parsed_result = json.loads(result)
+
+        if parsed_result.get("error") and parsed_result.get("error") != "":
+            raise HTTPException(status_code=400, detail=parsed_result.get("error"))
+
+        return schemas.FlowerIdentificationResponse(
+            color_id=parsed_result.get("color_id")
+        )
+
+    except openai.APIError as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
 @app.get("/players/{player_id}/session/info", response_model=Optional[schemas.SessionInfo])
-def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
+async def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Info about a current session"""
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player or not player.session_id:
@@ -514,10 +771,11 @@ def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
 
     return schemas.SessionInfo(
         recipe_id=session.recipe_id,
-        color_id=player.shears_color,
+        flower_id=player.assigned_flower,
         code=session.code,
+        initial_player = session.initial_player,
         flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, shears_color=p.shears_color,
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
                                            picture=p.profile_picture) for p in session.players],
         status=session.status
     )
@@ -525,7 +783,7 @@ def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
 
 #Overall
 @app.get("/decorations", response_model=List[schemas.DecorationShop])
-def get_all_decorations(db: Session = Depends(get_db)):
+async def get_all_decorations(db: Session = Depends(get_db)):
     """Get info about all decorations"""
     return db.query(models.Decoration).all()
 
@@ -591,98 +849,16 @@ async def get_all_flowers(db: Session = Depends(get_db)):
     flowers = db.query(models.Flower).all()
     return flowers
 @app.post("/flowers/add")
-async def add_flower(color_id: str, db: Session = Depends(get_db)):
+async def add_flower(color_id: str, name:str, db: Session = Depends(get_db)):
     """Add a new flower"""
 
     flower_db = db.query(models.Flower).filter(models.Flower.color_id == color_id).first()
     if flower_db:
-        raise HTTPException(status_code=404, detail="Flower already exists")
-    flower_db =  models.Flower(color_id = color_id)
+        raise HTTPException(status_code=404, detail="Flower with this color already exists")
+    flower_db =  models.Flower(color_id = color_id, name = name)
     db.add(flower_db)
     db.commit()
     return {"message": "New flower added!"}
-
-@app.post("/flowers/identify", response_model=schemas.FlowerIdentificationResponse)
-async def identify_flower(image: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Identify flower color from an uploaded image using AI vision"""
-    
-    # Validate that the uploaded file is an image
-    if not image.content_type or not image.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="File must be an image")
-    
-    try:
-        # Read the image file
-        image_bytes = await image.read()
-        
-        # Convert image to base64 for OpenAI API
-        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-        
-        # Get valid colors dynamically from the database
-        flowers = db.query(models.Flower).all()
-        valid_colors = list(set(flower.color_id for flower in flowers))
-        
-        if not valid_colors:
-            raise HTTPException(status_code=500, detail="No flower colors found in database")
-        
-        # Parse template and schema
-        messages, response_format = parse_template_and_schema(
-            template="flower_identification_prompt.jinja",
-            schema="flower_identification_schema.json",
-            variables={"valid_colors": valid_colors}
-        )
-        
-        # Add the image to the user message
-        user_message = messages[-1]  # Last message should be the user message
-        user_message["content"] = [
-            {
-                "type": "text",
-                "text": user_message["content"]
-            },
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:{image.content_type};base64,{image_base64}"
-                }
-            }
-        ]
-        
-        # Get OpenAI API key from environment
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            print("!!!!!!!!!!!!!!!!OpenAI API key not configured")
-            return schemas.FlowerIdentificationResponse(
-                color_id="red"
-            )
-        
-        # Initialize OpenAI client
-        client = openai.OpenAI(api_key=api_key)
-        
-        # Call OpenAI API with vision capabilities
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini", 
-            messages=messages,
-            response_format=response_format,
-            max_tokens=300
-        )
-        
-        # Parse the response
-        result = response.choices[0].message.content
-        
-        # The response should be JSON thanks to the structured output
-        import json
-        parsed_result = json.loads(result)
-
-        if parsed_result.get("error") and parsed_result.get("error") != "":
-            raise HTTPException(status_code=400, detail=parsed_result.get("error"))
-        
-        return schemas.FlowerIdentificationResponse(
-            color_id=parsed_result.get("color_id")
-        )
-        
-    except openai.APIError as e:
-        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
 
 """ Probably unnecessary
@@ -704,13 +880,13 @@ async def get_all_potions(db: Session = Depends(get_db)):
 
 #for debug only
 @app.post("/debug/reset")
-def reset(db: Session = Depends(get_db)):
+async def reset(db: Session = Depends(get_db)):
     """Reset db to initial state"""
     seed_data.reset_and_seed_call()
     return {"message": "Done!"}
 #get all sessions (for debugging)
 @app.get("/debug/sessions", response_model=List[schemas.DebugSessionInfo])
-def get_all_sessions(db: Session = Depends(get_db)):
+async def get_all_sessions(db: Session = Depends(get_db)):
     """Get all sessions"""
     sessions = db.query(models.Session).all()
     return sessions
@@ -718,7 +894,7 @@ def get_all_sessions(db: Session = Depends(get_db)):
 #clean sessions (based on creation_time)
 
 @app.post("/debug/clearStaleSessions")
-def clear_stale_sessions(db: Session = Depends(get_db)):
+async def clear_stale_sessions(db: Session = Depends(get_db)):
     """Remove old sessions"""
     cutoff = datetime.now() - timedelta(days=1)
     # Fetch all sessions (you could optimize this by filtering in SQL if needed)
@@ -735,3 +911,144 @@ def clear_stale_sessions(db: Session = Depends(get_db)):
 
     db.commit()
     return removed_count
+
+#Right now: mocked up with flower_ids
+@app.post("/players/{player_id}/session/collect_flower_old/{flower_id}", response_model=Optional[schemas.SessionInfo])
+async def collect_flower_old( flower_id: int, player_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Collect flower with flower_id, if identifying doesn't work"""
+    #player
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player or not player.session_id:
+        raise HTTPException(status_code=404, detail="Player not in a session")
+
+    # get session
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status == 0:
+        raise HTTPException(status_code=400, detail="Waiting for other players")
+
+    if session.status == 2:
+        raise HTTPException(status_code=400, detail="Session already in brewing stage")
+
+    flower = db.query(models.Flower).filter(models.Flower.id == flower_id).first()
+    if not flower:
+        raise HTTPException(status_code=404, detail="Flower not found")
+
+    # Check if flower color matches player's shears
+    if flower_id != player.assigned_flower:
+        raise HTTPException(status_code=400, detail="You cannot collect this flower!")
+
+    # Add flower to session's collected flowers
+    recipe = db.query(models.Recipe).get(session.recipe_id)
+    recipe_flower_ids = {f.id for f in recipe.required_flowers}
+
+    if flower_id not in recipe_flower_ids:
+        raise HTTPException(status_code=400, detail="This flower is not required for the recipe")
+
+    session.flowers_collected.append(flower)
+
+    # Check if recipe requirements are met
+    recipe = session.recipe
+    required_ids = {f.id for f in recipe.required_flowers}
+    collected_ids = {f.id for f in session.flowers_collected}
+    if required_ids.issubset(collected_ids):
+        session.status = 2  # Complete
+        for potion in [p.id for p in recipe.required_potions]:
+            remove_potion_from_inventory_func(session.initial_player,potion, db)
+
+    db.commit()
+    db.refresh(session)
+    return schemas.SessionInfo(
+        recipe_id=session.recipe_id,
+        flower_id=player.assigned_flower,
+        code=session.code,
+        initial_player=session.initial_player,
+        flowers_collected=[f.id for f in session.flowers_collected],
+        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
+                                           picture=p.profile_picture) for p in session.players],
+        status=session.status
+    )
+
+@app.post("/debug/identify")
+async def identify_flower(image: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Identify flower color from an uploaded image using AI vision"""
+
+    # Validate that the uploaded file is an image
+    if not image.content_type or not image.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    try:
+        # Read the image file
+        image_bytes = await image.read()
+
+        # Convert image to base64 for OpenAI API
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        # Get valid colors dynamically from the database
+        flowers = db.query(models.Flower).all()
+        valid_colors = list(set(flower.color_id for flower in flowers))
+
+        if not valid_colors:
+            raise HTTPException(status_code=500, detail="No flower colors found in database")
+
+        # Parse template and schema
+        messages, response_format = parse_template_and_schema(
+            template="flower_identification_prompt.jinja",
+            schema="flower_identification_schema.json",
+            variables={"valid_colors": valid_colors}
+        )
+
+        # Add the image to the user message
+        user_message = messages[-1]  # Last message should be the user message
+        user_message["content"] = [
+            {
+                "type": "text",
+                "text": user_message["content"]
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.content_type};base64,{image_base64}"
+                }
+            }
+        ]
+
+        # Get OpenAI API key from environment
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            print("!!!!!!!!!!!!!!!!OpenAI API key not configured")
+            return schemas.FlowerIdentificationResponse(
+                color_id="red"
+            )
+
+        # Initialize OpenAI client
+        client = openai.OpenAI(api_key=api_key)
+
+        # Call OpenAI API with vision capabilities
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=messages,
+            response_format=response_format,
+            max_tokens=300
+        )
+
+        # Parse the response
+        result = response.choices[0].message.content
+
+        # The response should be JSON thanks to the structured output
+        import json
+        parsed_result = json.loads(result)
+
+        if parsed_result.get("error") and parsed_result.get("error") != "":
+            raise HTTPException(status_code=400, detail=parsed_result.get("error"))
+
+        return schemas.FlowerIdentificationResponse(
+            color_id=parsed_result.get("color_id")
+        )
+
+    except openai.APIError as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
