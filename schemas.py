@@ -18,7 +18,7 @@ class PlayerLogin(BaseModel):
 
 class PlayerBase(BaseModel):
     name: Optional[str] = None
-    picture: Optional[int] = 0
+    profile_picture: int
 
 class Player(PlayerBase):
     player_id: uuid.UUID
@@ -34,7 +34,6 @@ class PlayerLog(BaseModel):
 
 
 #Flowers
-
 
 class Flower (BaseModel):
     id: int
@@ -111,7 +110,7 @@ class SessionJoin(BaseModel):
 class PlayerSessionInfo(BaseModel):
     player_id: uuid.UUID
     name: str
-    picture: Optional[int] = 0
+    profile_picture: int
     assigned_flower: int
     class Config:
         orm_mode = True

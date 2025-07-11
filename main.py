@@ -28,7 +28,7 @@ async def root():
     return {"message": "Welcome to My Little Grimoire API"}
 
 #login endpoints
-@app.post("/register", response_model=schemas.Player)
+@app.post("/register", response_model=schemas.Player, tags=["Account"])
 async def register_player(reg_data: schemas.PlayerRegister, db: Session = Depends(get_db)):
     existing = db.query(models.PlayerAccount).filter(models.PlayerAccount.user_name == reg_data.user_name).first()
     if existing:
@@ -54,7 +54,7 @@ async def register_player(reg_data: schemas.PlayerRegister, db: Session = Depend
     db.refresh(new_player)
     return new_player
 
-@app.post("/login", response_model=schemas.Player)
+@app.post("/login", response_model=schemas.Player, tags=["Account"])
 async def login_player(login_data: schemas.PlayerLogin, db: Session = Depends(get_db)):
     account = db.query(models.PlayerAccount).filter(models.PlayerAccount.user_name == login_data.user_name).first()
     if not account or not utils.verify_password(login_data.password, account.password_hash):
@@ -63,17 +63,17 @@ async def login_player(login_data: schemas.PlayerLogin, db: Session = Depends(ge
     return player
 
 # Playerendpoints
-@app.get("/players", response_model=List[schemas.Player])
+@app.get("/players", response_model=List[schemas.Player], tags=["Player"])
 async def get_all_players(db: Session = Depends(get_db)):
     players = db.query(models.Player).all()
     return players
-@app.post("/players/create_noAcc", response_model=schemas.Player)
+@app.post("/players/create_noAcc", response_model=schemas.Player, tags = ["Debug", "Player"])
 async def create_player_noAcc(player: schemas.PlayerCreate, db: Session = Depends(get_db)):
     """Create a new player with their grimoire. Created without link to account"""
 
     db_player = models.Player(
         name=player.name,
-        profile_picture=player.picture
+        profile_picture=player.profile_picture
     )
     db.add(db_player)
     db.flush()
@@ -83,7 +83,7 @@ async def create_player_noAcc(player: schemas.PlayerCreate, db: Session = Depend
     db.refresh(db_player)
     return db_player
 
-@app.post("/players/{player_id}/updateData", response_model=schemas.Player)
+@app.post("/players/{player_id}/updateData", response_model=schemas.Player, tags = ["Player"])
 async def update_player_data(player_id: uuid.UUID, player_data: schemas.PlayerBase, db: Session = Depends(get_db)):
     """Use this when just registered or if player changes his data"""
     db_player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
@@ -92,13 +92,12 @@ async def update_player_data(player_id: uuid.UUID, player_data: schemas.PlayerBa
 
     if player_data.name:
         db_player.name = player_data.name
-    if player_data.picture is not None:
-        db_player.profile_picture = player_data.picture
+    db_player.profile_picture = player_data.profile_picture
 
     db.commit()
     db.refresh(db_player)
     return db_player
-@app.get("/players/{player_id}", response_model=schemas.Player)
+@app.get("/players/{player_id}", response_model=schemas.Player, tags = ["Player"])
 async def get_player(player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Get player by UUID"""
     db_player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
@@ -107,7 +106,7 @@ async def get_player(player_id: uuid.UUID, db: Session = Depends(get_db)):
     return db_player
 
 
-@app.post("/players/{player_id}/follow/{followed_id}")
+@app.post("/players/{player_id}/follow/{followed_id}", tags = ["Followers"])
 async def follow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
 
     if player_id == followed_id:
@@ -134,7 +133,7 @@ async def follow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Sessio
     return {"message": "Followed successfully"}
 
 
-@app.post("/players/{player_id}/unfollow/{followed_id}")
+@app.post("/players/{player_id}/unfollow/{followed_id}", tags = ["Followers"])
 async def unfollow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
     follower = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     followed = db.query(models.Player).filter(models.Player.player_id == followed_id).first()
@@ -153,7 +152,7 @@ async def unfollow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Sess
     db.commit()
     return {"message": "Unfollowed successfully"}
 
-@app.get("/players/{player_id}/followers", response_model=List[schemas.Player])
+@app.get("/players/{player_id}/followers", response_model=List[schemas.Player], tags = ["Followers"])
 async def get_followers(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -167,7 +166,7 @@ async def get_followers(player_id: uuid.UUID, db: Session = Depends(get_db)):
     )
     return followers
 
-@app.get("/players/{player_id}/following", response_model=List[schemas.Player])
+@app.get("/players/{player_id}/following", response_model=List[schemas.Player], tags = ["Followers"])
 async def get_following(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -182,7 +181,7 @@ async def get_following(player_id: uuid.UUID, db: Session = Depends(get_db)):
     return following
 
 #Customers
-@app.put("/players/{player_id}/customer/{customer_id}", response_model=schemas.Player)
+@app.put("/players/{player_id}/customer/{customer_id}", response_model=schemas.Player, tags = ["Customers"])
 async def set_customer_id(player_id: uuid.UUID, customer_id: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -192,8 +191,18 @@ async def set_customer_id(player_id: uuid.UUID, customer_id: int, db: Session = 
     db.refresh(player)
     return player
 
+@app.post("/players/{player_id}/customer_post/{customer_id}", response_model=schemas.Player, tags = ["Customers", "Debug"])
+async def set_customer_id_post(player_id: uuid.UUID, customer_id: int, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    player.customer_id = customer_id
+    db.commit()
+    db.refresh(player)
+    return player
+
 #Money
-@app.post("/players/{player_id}/money/change", response_model=int)
+@app.post("/players/{player_id}/money/change", response_model=int, tags = ["Money"])
 async def change_player_money(player_id: uuid.UUID, amount: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -206,15 +215,21 @@ async def change_player_money(player_id: uuid.UUID, amount: int, db: Session = D
     return player.money
 
 #Grimoire
-@app.get("/players/{player_id}/grimoire", response_model=schemas.Grimoire)
+
+def _format_grimoire(grimoire: models.Grimoire, db: Session) -> schemas.Grimoire:
+    """Format grimoire"""
+    return schemas.Grimoire(unlocked_recipes=[r.id for r in grimoire.unlocked_recipes])
+
+@app.get("/players/{player_id}/grimoire", response_model=schemas.Grimoire, tags = ["Grimoire"])
 async def get_player_grimoire(player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Get player's grimoire"""
     db_grimoire = db.query(models.Grimoire).filter(models.Grimoire.player_id == player_id).first()
     if not db_grimoire:
         raise HTTPException(status_code=404, detail="Grimoire not found")
-    return schemas.Grimoire(unlocked_recipes = [r.id for r in db_grimoire.unlocked_recipes])
+    return _format_grimoire(db_grimoire, db)
 
-@app.post("/players/{player_id}/grimoire/unlock/{recipe_id}", response_model=schemas.Grimoire)
+
+@app.post("/players/{player_id}/grimoire/unlock/{recipe_id}", response_model=schemas.Grimoire, tags = ["Grimoire"])
 async def unlock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Session = Depends(get_db)):
     """Add recipe to player's grimoire"""
     # Find grimoire for player
@@ -237,9 +252,10 @@ async def unlock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Ses
     db.refresh(db_grimoire)
 
     # Return updated grimoire recipe ids
-    return schemas.Grimoire(unlocked_recipes = [r.id for r in db_grimoire.unlocked_recipes])
+    return _format_grimoire(db_grimoire, db)
 
-@app.post("/players/{player_id}/grimoire/lock/{recipe_id}", response_model=schemas.Grimoire)
+#TODO: maybe change to remove
+@app.post("/players/{player_id}/grimoire/lock/{recipe_id}", response_model=schemas.Grimoire, tags = ["Grimoire"])
 async def lock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Session = Depends(get_db)):
     """Add recipe to player's grimoire"""
     # Find grimoire for player
@@ -257,25 +273,31 @@ async def lock_recipe_for_player(player_id: uuid.UUID, recipe_id: int, db: Sessi
         db_grimoire.unlocked_recipes.remove(recipe)
         db.commit()
         db.refresh(db_grimoire)
-        return schemas.Grimoire(unlocked_recipes=[r.id for r in db_grimoire.unlocked_recipes])
+        return _format_grimoire(db_grimoire, db)
 
     else:
         raise HTTPException(status_code=404, detail="Recipe has not been unlocked yet")
 
+
+def _format_inventory(inventory_items: List[models.InventoryItem], db: Session) -> schemas.Inventory:
+    """Format inventory"""
+    return schemas.Inventory(potions = [schemas.InventoryItem(potion_id = item.potion_id, amount=item.amount)
+                for item in inventory_items
+                ])
+
+
 # Inventory
-@app.get("/players/{player_id}/inventory", response_model=schemas.Inventory)
+@app.get("/players/{player_id}/inventory", response_model=schemas.Inventory, tags = ["Inventory"])
 async def get_inventory(player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Get player's recipe by his UUID"""
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
-    inventory = [schemas.InventoryItem(potion_id = item.potion_id, amount=item.amount)
-                for item in player.inventory_items
-                ]
-    return schemas.Inventory(potions=inventory)
+
+    return _format_inventory(player.inventory_items, db)
 
 
-@app.post("/players/{player_id}/inventory/add/{potion_id}")
+@app.post("/players/{player_id}/inventory/add/{potion_id}", response_model=schemas.Inventory, tags = ["Inventory"])
 async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -295,12 +317,11 @@ async def add_potion_to_inventory(player_id: uuid.UUID, potion_id: int, db: Sess
         db.add(new_item)
 
     db.commit()
-    inventory = [schemas.InventoryItem(potion_id=item.potion_id, amount=item.amount)
-                 for item in player.inventory_items
-                 ]
-    return schemas.Inventory(potions=inventory)
+    return _format_inventory(player.inventory_items, db)
 
-@app.post("/players/{player_id}/inventory/remove/{potion_id}")
+
+#TODO: maybe choose from psot to remove (-> notify Maxi later)
+@app.post("/players/{player_id}/inventory/remove/{potion_id}", response_model=schemas.Inventory, tags = ["Inventory"])
 async def remove_potion_from_inventory(player_id: uuid.UUID, potion_id: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -316,12 +337,10 @@ async def remove_potion_from_inventory(player_id: uuid.UUID, potion_id: int, db:
         db.delete(inventory_item)
 
     db.commit()
-    inventory = [schemas.InventoryItem(potion_id=item.potion_id, amount=item.amount)
-                 for item in player.inventory_items
-                 ]
-    return schemas.Inventory(potions=inventory)
+    return _format_inventory(player.inventory_items, db)
 
 
+#TODO: ideally merge into previous
 def remove_potion_from_inventory_func(player_id: uuid.UUID, potion_id: int, db: Session):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -337,9 +356,14 @@ def remove_potion_from_inventory_func(player_id: uuid.UUID, potion_id: int, db: 
         db.delete(inventory_item)
 
     db.commit()
+
 # Decorations
 
-@app.post("/players/{player_id}/decorations/buy/{decoration_id}", response_model=schemas.DecorationInventory)
+def _format_decorations(inventory_decorations: List[models.DecorationPlayer], db: Session) -> schemas.DecorationInventory:
+    """Format decorations"""
+    return schemas.DecorationInventory(decorations = [schemas.DecorationPlayer(used = d.used, position = d.position, decoration_id = d.decoration_id) for d in inventory_decorations])
+
+@app.post("/players/{player_id}/decorations/buy/{decoration_id}", response_model=schemas.DecorationInventory, tags = ["Decorations"])
 async def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
     decoration = db.query(models.Decoration).get(decoration_id)
     if not decoration:
@@ -362,22 +386,18 @@ async def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session =
     db.add(player_decoration)
     db.commit()
 
-    inventory_decorations = player.decorations
-    return schemas.DecorationInventory(decorations = [schemas.DecorationPlayer(used = d.used, position = d.position, decoration_id = d.decoration_id) for d in inventory_decorations])
+    return _format_decorations (player.decorations, db)
 
 
 #Get decorations
-@app.get("/players/{player_id}/decorations", response_model=schemas.DecorationInventory)
+@app.get("/players/{player_id}/decorations", response_model=schemas.DecorationInventory, tags = ["Decorations"])
 async def get_player_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
-    inventory_decorations = player.decorations
-    return schemas.DecorationInventory(
-        decorations=[schemas.DecorationPlayer(used=d.used, position=d.position, decoration_id=d.decoration_id) for d in
-                     inventory_decorations])
+    return _format_decorations (player.decorations, db)
 
-@app.post("/players/{player_id}/decorations/place/{decoration_id}")
+@app.post("/players/{player_id}/decorations/place/{decoration_id}", response_model=schemas.DecorationInventory, tags = ["Decorations"])
 async def place_decoration(player_id: uuid.UUID, decoration_id: int, position: int, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -393,7 +413,7 @@ async def place_decoration(player_id: uuid.UUID, decoration_id: int, position: i
         raise HTTPException(status_code=404, detail="Decoration not found")
 
     # Check allowed position using bitmask
-    if not (decoration.allowed_position & (1 << position)):
+    if position < 0 or not (decoration.allowed_position & (1 << position)):
         raise HTTPException(status_code=400, detail="Invalid position for this decoration")
 
     other_at_position = (db.query(models.DecorationPlayer)
@@ -408,12 +428,33 @@ async def place_decoration(player_id: uuid.UUID, decoration_id: int, position: i
     decoration_player.used = True
     decoration_player.position = position
     db.commit()
-    inventory_decorations = player.decorations
-    return schemas.DecorationInventory(
-        decorations=[schemas.DecorationPlayer(used=d.used, position=d.position, decoration_id=d.decoration_id) for d in
-                     inventory_decorations])
+    return _format_decorations (player.decorations, db)
 
-@app.get("/players/{player_id}/decorations/used", response_model=List[schemas.DecorationUsed])
+@app.post("/players/{player_id}/decorations/unplace/{decoration_id}", response_model=schemas.DecorationInventory, tags = ["Decorations"])
+async def unplace_decoration(player_id: uuid.UUID, decoration_id: int, db: Session = Depends(get_db)):
+    # Get player
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    # Check if player owns the decoration
+    decoration_player = db.query(models.DecorationPlayer).filter_by(player_id=player_id, decoration_id=decoration_id
+    ).first()
+
+    if not decoration_player:
+        raise HTTPException(status_code=404, detail="Player does not own this decoration")
+
+    # Check if it is placed
+    if not decoration_player.used:
+        raise HTTPException(status_code=400, detail="Decoration is not placed")
+
+    # Unplace it
+    decoration_player.used = False
+    decoration_player.position = None
+    db.commit()
+
+    return _format_decorations(player.decorations, db)
+@app.get("/players/{player_id}/decorations/used", response_model=List[schemas.DecorationUsed], tags = ["Decorations"])
 async def get_used_decorations(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -428,9 +469,29 @@ async def get_used_decorations(player_id: uuid.UUID, db: Session = Depends(get_d
 
 
 
+def _format_player_session_info(players: List[models.Player], db: Session) -> List[schemas.PlayerSessionInfo]:
+    """Format player session info"""
+    return [schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
+                                           profile_picture=p.profile_picture) for p in players]
+
+def _format_flowers(flowers: List[models.Flower], db: Session) -> List[int]:
+    """Format flower to return id only"""
+    return [f.id for f in flowers]
+def _format_session_info(session: models.Session, flower: int, db: Session) -> schemas.SessionInfo:
+    """Format session info"""
+    return schemas.SessionInfo(
+        recipe_id=session.recipe_id,
+        flower_id=flower,
+        code=session.code,
+        initial_player=session.initial_player,
+        flowers_collected=_format_flowers(session.flowers_collected, db),
+        players=_format_player_session_info(session.players, db),
+        status=session.status
+    )
+
 """Sessions"""
 #update location
-@app.put("/players/{player_id}/session/update_loc", response_model=schemas.SessionInfo)
+@app.put("/players/{player_id}/session/update_loc", response_model=schemas.SessionInfo, tags = ["Session"])
 async def update_loc_session(player_id: uuid.UUID, data: schemas.PlayerLocation, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -446,19 +507,28 @@ async def update_loc_session(player_id: uuid.UUID, data: schemas.PlayerLocation,
     session.initial_lng = data.initial_lng
     db.commit()
     db.refresh(session)
-    return schemas.SessionInfo(
-        recipe_id=session.recipe_id,
-        flower_id=player.assigned_flower,
-        code=session.code,
-        initial_player=session.initial_player,
-        flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
-                                           picture=p.profile_picture) for p in session.players],
-        status=session.status
-    )
+    return _format_session_info(session, player.assigned_flower, db)
+
+@app.post("/players/{player_id}/session/update_loc_post", response_model=schemas.SessionInfo, tags = ["Session"])
+async def update_loc_session_post(player_id: uuid.UUID, data: schemas.PlayerLocation, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if not player.session_id:
+        raise HTTPException(status_code=400, detail="Player not in a session")
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if player_id != session.initial_player:
+        raise HTTPException(status_code=400, detail="Player is not initial player in this session")
+    session.initial_lat = data.initial_lat
+    session.initial_lng = data.initial_lng
+    db.commit()
+    db.refresh(session)
+    return _format_session_info(session, player.assigned_flower, db)
 
 #create session
-@app.post("/session/create", response_model=schemas.SessionInfo)
+@app.post("/session/create", response_model=schemas.SessionInfo, tags = ["Session"])
 async def create_session(data: schemas.SessionCreate, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
     if not player:
@@ -498,9 +568,9 @@ async def create_session(data: schemas.SessionCreate, db: Session = Depends(get_
         join_code = utils.generate_code()
     status = 0
 
-    #change status to collecting
-    if not available_flowers:
-        status = 1
+    # #change status to collecting
+    # if not available_flowers:
+    #     status = 1
 
     new_session = models.Session(
         recipe_id=data.recipe_id,
@@ -518,18 +588,34 @@ async def create_session(data: schemas.SessionCreate, db: Session = Depends(get_
     player.assigned_flower = assigned_flower
     db.commit()
 
-    return schemas.SessionInfo(
-        recipe_id = data.recipe_id,
-        flower_id=assigned_flower,
-        code=join_code,
-        flowers_collected = [],
-        initial_player = new_session.initial_player,
-        players = [schemas.PlayerSessionInfo(player_id = p.player_id, name = p.name, assigned_flower=p.assigned_flower, picture = p.profile_picture)  for p in new_session.players],
-        status = new_session.status
-    )
+    return _format_session_info(new_session, assigned_flower, db)
+
+
+#start session
+@app.post("/players/{player_id}/session/start", response_model=schemas.SessionInfo, tags = ["Session"])
+async def start_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if not player.session_id:
+        raise HTTPException(status_code=400, detail="Player not in a session")
+    session = db.query(models.Session).filter(models.Session.session_id == player.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if player_id != session.initial_player:
+        raise HTTPException(status_code=400, detail="Player is not initial player in this session")
+    if session.status !=0:
+        raise HTTPException(status_code=400, detail="Session already started")
+    if not session.flowers_available:
+        session.status = 1
+    else:
+        raise HTTPException(status_code=400, detail="Not enough players")
+    db.commit()
+    db.refresh(session)
+    return _format_session_info(session, player.assigned_flower, db)
 
 #Join session
-@app.post("/session/join", response_model=schemas.SessionInfo)
+@app.post("/session/join", response_model=schemas.SessionInfo, tags = ["Session"])
 async def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db)):
     #get player
     player = db.query(models.Player).filter(models.Player.player_id == data.player_id).first()
@@ -547,7 +633,7 @@ async def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db))
     #ambiguous
     if not session.flowers_available:
         raise HTTPException(status_code=400, detail="No flowers available")
-    #TODO: what if players moved? Should we always update with position of first player or let it be like that?
+
     if not utils.is_within_distance(data.lat, data.lng, session.initial_lat, session.initial_lng):
         raise HTTPException(status_code=400, detail="Too far from session")
 
@@ -559,26 +645,17 @@ async def join_session(data: schemas.SessionJoin, db: Session = Depends(get_db))
     player.assigned_flower = assigned_flower
 
 
-    #change to collecting
-    if not session.flowers_available:
-        session.status = 1
+    # #change to collecting
+    # if not session.flowers_available:
+    #     session.status = 1
     db.commit()
     db.refresh(session)
 
-    return schemas.SessionInfo(
-        recipe_id=session.recipe_id,
-        flower_id=assigned_flower,
-        initial_player = session.initial_player,
-        code=session.code,
-        flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
-                                           picture=p.profile_picture) for p in session.players],
-        status=session.status
-    )
+    return _format_session_info(session, assigned_flower, db)
 
 
 #Leave all sessions
-@app.post("/players/{player_id}/leaveSession")
+@app.post("/players/{player_id}/leaveSession", tags = ["Session"])
 async def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
@@ -612,7 +689,7 @@ async def leave_session(player_id: uuid.UUID, db: Session = Depends(get_db)):
     return {"message": "Left session successfully"}
 
 
-@app.post("/players/{player_id}/session/collect_flower", response_model=Optional[schemas.SessionInfo])
+@app.post("/players/{player_id}/session/collect_flower", response_model=Optional[schemas.SessionInfo], tags = ["Session"])
 async def collect_flower(player_id: uuid.UUID, image: UploadFile = File(...), db: Session = Depends(get_db)):
     """Collect flower"""
     #player
@@ -665,16 +742,7 @@ async def collect_flower(player_id: uuid.UUID, image: UploadFile = File(...), db
 
     db.commit()
     db.refresh(session)
-    return schemas.SessionInfo(
-        recipe_id=session.recipe_id,
-        flower_id=player.assigned_flower,
-        code=session.code,
-        initial_player=session.initial_player,
-        flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
-                                           picture=p.profile_picture) for p in session.players],
-        status=session.status
-    )
+    return _format_session_info(session, player.assigned_flower, db)
 
 async def identify_flower(image:UploadFile, db:Session):
     """Identify flower color from an uploaded image using AI vision"""
@@ -757,7 +825,7 @@ async def identify_flower(image:UploadFile, db:Session):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
-@app.get("/players/{player_id}/session/info", response_model=Optional[schemas.SessionInfo])
+@app.get("/players/{player_id}/session/info", response_model=Optional[schemas.SessionInfo], tags = ["Session"])
 async def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Info about a current session"""
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
@@ -769,25 +837,16 @@ async def session_info(player_id: uuid.UUID, db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return schemas.SessionInfo(
-        recipe_id=session.recipe_id,
-        flower_id=player.assigned_flower,
-        code=session.code,
-        initial_player = session.initial_player,
-        flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
-                                           picture=p.profile_picture) for p in session.players],
-        status=session.status
-    )
+    return _format_session_info(session, player.assigned_flower, db)
 
 
 #Overall
-@app.get("/decorations", response_model=List[schemas.DecorationShop])
+@app.get("/decorations", response_model=List[schemas.DecorationShop], tags = ["Decorations"])
 async def get_all_decorations(db: Session = Depends(get_db)):
     """Get info about all decorations"""
     return db.query(models.Decoration).all()
 
-@app.post("/decorations/add")
+@app.post("/decorations/add", tags = ["Decorations"])
 async def add_decoration(decoration: schemas.DecorationCreate, db: Session = Depends(get_db)):
     """Add a new decoration"""
 
@@ -799,22 +858,32 @@ async def add_decoration(decoration: schemas.DecorationCreate, db: Session = Dep
     db.commit()
     return {"message": "New decoration added!"}
 
+def _format_recipe_id(recipes: List[models.Recipe], db: Session) -> List[int]:
+    """Format recipe to return id only"""
+    return [r.id for r in recipes]
 
-@app.get("/recipes", response_model=List[schemas.Recipe])
+def _format_recipe (r: models.Recipe, db: Session) -> schemas.Recipe:
+    """Format recipes to return id only"""
+    return schemas.Recipe(name=r.name, required_flowers=_format_flowers(r.required_flowers, db),
+                          required_potions=_format_recipe_id(r.required_potions, db), id=r.id)
+def _format_recipes(recipes: List[models.Recipe], db: Session) -> List[schemas.Recipe]:
+    """Format recipe info to return id only"""
+    return [_format_recipe(r, db) for r in recipes]
+@app.get("/recipes", response_model=List[schemas.Recipe], tags = ["Recipe"])
 async def get_all_recipes(db: Session = Depends(get_db)):
     """Get all recipes"""
     recipes = db.query(models.Recipe).all()
-    return [schemas.Recipe(name = r.name, required_flowers=[f.id for f in r.required_flowers], required_potions=[p.id for p in r.required_potions], id = r.id)  for r in recipes]
+    return _format_recipes(recipes, db)
 
-@app.get("/recipes/{recipe_id}", response_model=schemas.Recipe)
+@app.get("/recipes/{recipe_id}", response_model=schemas.Recipe, tags = ["Recipe"])
 async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
     """Get information about recipe"""
     db_recipe = db.query(models.Recipe).filter(models.Recipe.id == recipe_id).first()
     if not db_recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    return schemas.Recipe(name = db_recipe.name, required_flowers=[f.id for f in db_recipe.required_flowers], required_potions=[p.id for p in db_recipe.required_potions], id = db_recipe.id)
+    return _format_recipe(db_recipe, db)
 
-@app.post("/recipes/add")
+@app.post("/recipes/add", tags = ["Recipe"])
 async def add_recipe(recipe: schemas.RecipeCreate, db: Session = Depends(get_db)):
     """Add a new recipe"""
 
@@ -843,12 +912,12 @@ async def add_recipe(recipe: schemas.RecipeCreate, db: Session = Depends(get_db)
     return {"message": "New recipe added!"}
 
 
-@app.get("/flowers", response_model=List[schemas.Flower])
+@app.get("/flowers", response_model=List[schemas.Flower], tags = ["Flower"])
 async def get_all_flowers(db: Session = Depends(get_db)):
     """Get all flowers"""
     flowers = db.query(models.Flower).all()
     return flowers
-@app.post("/flowers/add")
+@app.post("/flowers/add", tags = ["Flower"])
 async def add_flower(color_id: str, name:str, db: Session = Depends(get_db)):
     """Add a new flower"""
 
@@ -1321,13 +1390,13 @@ def _format_offer_response(offer: models.TradeOffer, db: Session) -> schemas.Tra
 
 
 #for debug only
-@app.post("/debug/reset")
+@app.post("/debug/reset", tags = ["Debug"])
 async def reset(db: Session = Depends(get_db)):
     """Reset db to initial state"""
     seed_data.reset_and_seed_call()
     return {"message": "Done!"}
 #get all sessions (for debugging)
-@app.get("/debug/sessions", response_model=List[schemas.DebugSessionInfo])
+@app.get("/debug/sessions", response_model=List[schemas.DebugSessionInfo], tags = ["Debug"])
 async def get_all_sessions(db: Session = Depends(get_db)):
     """Get all sessions"""
     sessions = db.query(models.Session).all()
@@ -1335,7 +1404,7 @@ async def get_all_sessions(db: Session = Depends(get_db)):
 
 #clean sessions (based on creation_time)
 
-@app.post("/debug/clearStaleSessions")
+@app.post("/debug/clearStaleSessions", tags = ["Debug"])
 async def clear_stale_sessions(db: Session = Depends(get_db)):
     """Remove old sessions"""
     cutoff = datetime.now() - timedelta(days=1)
@@ -1355,7 +1424,7 @@ async def clear_stale_sessions(db: Session = Depends(get_db)):
     return removed_count
 
 #Right now: mocked up with flower_ids
-@app.post("/players/{player_id}/session/collect_flower_old/{flower_id}", response_model=Optional[schemas.SessionInfo])
+@app.post("/players/{player_id}/session/collect_flower_old/{flower_id}", response_model=Optional[schemas.SessionInfo], tags = ["Debug"])
 async def collect_flower_old( flower_id: int, player_id: uuid.UUID, db: Session = Depends(get_db)):
     """Collect flower with flower_id, if identifying doesn't work"""
     #player
@@ -1402,18 +1471,9 @@ async def collect_flower_old( flower_id: int, player_id: uuid.UUID, db: Session 
 
     db.commit()
     db.refresh(session)
-    return schemas.SessionInfo(
-        recipe_id=session.recipe_id,
-        flower_id=player.assigned_flower,
-        code=session.code,
-        initial_player=session.initial_player,
-        flowers_collected=[f.id for f in session.flowers_collected],
-        players=[schemas.PlayerSessionInfo(player_id=p.player_id, name=p.name, assigned_flower=p.assigned_flower,
-                                           picture=p.profile_picture) for p in session.players],
-        status=session.status
-    )
+    return _format_session_info(session, player.assigned_flower, db)
 
-@app.post("/debug/identify")
+@app.post("/debug/identify", tags = ["Debug"])
 async def identify_flower(image: UploadFile = File(...), db: Session = Depends(get_db)):
     """Identify flower color from an uploaded image using AI vision"""
 
