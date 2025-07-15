@@ -133,7 +133,7 @@ def create_sample_data():
         db.close()
 
 def create_seed_trades(db: Session, healing_potion, mana_potion, legendary_elixir):
-    """Create sample trades to demonstrate the trading system"""
+    """Create sample simple sale listings"""
     try:
         # Get players
         players = db.query(models.Player).all()
@@ -176,159 +176,66 @@ def create_seed_trades(db: Session, healing_potion, mana_potion, legendary_elixi
         
         db.commit()
         
-        # Trade 1: Active trade with initial offer (open status)
-        trade1 = models.Trade(
+        # Simple sale listings
+        
+        # Sale 1: Healing Potion for 50 coins (available)
+        sale1 = models.Trade(
             seller_id=player1.player_id,
             item_id=healing_potion.id,
             item_amount=1,
-            initial_price=50,
-            status="open"
+            price=50,
+            status="available"
         )
-        db.add(trade1)
-        db.flush()
+        db.add(sale1)
         
-        # Initial seller offer for trade1
-        trade1_initial_offer = models.TradeOffer(
-            trade_id=trade1.id,
-            offerer_id=player1.player_id,
-            money_amount=50,
-            potions_offered=[],
-            is_seller_offer=True,
-            status="active"
-        )
-        db.add(trade1_initial_offer)
-        
-        # Trade 2: Trade in negotiation with multiple offers
-        trade2 = models.Trade(
+        # Sale 2: Mana Potion for 75 coins (available)
+        sale2 = models.Trade(
             seller_id=player2.player_id,
             item_id=mana_potion.id,
             item_amount=1,
-            initial_price=75,
-            status="in_negotiation"
+            price=75,
+            status="available"
         )
-        db.add(trade2)
-        db.flush()
+        db.add(sale2)
         
-        # Initial seller offer for trade2 (superseded)
-        trade2_initial_offer = models.TradeOffer(
-            trade_id=trade2.id,
-            offerer_id=player2.player_id,
-            money_amount=75,
-            potions_offered=[],
-            is_seller_offer=True,
-            status="superseded"
-        )
-        db.add(trade2_initial_offer)
-        
-        # Buyer's counter-offer (superseded)
-        trade2_buyer_offer = models.TradeOffer(
-            trade_id=trade2.id,
-            offerer_id=player1.player_id,
-            money_amount=60,
-            potions_offered=[],
-            is_seller_offer=False,
-            status="superseded"
-        )
-        db.add(trade2_buyer_offer)
-        
-        # Seller's counter-offer (active)
-        trade2_seller_counter = models.TradeOffer(
-            trade_id=trade2.id,
-            offerer_id=player2.player_id,
-            money_amount=65,
-            potions_offered=[],
-            is_seller_offer=True,
-            status="active"
-        )
-        db.add(trade2_seller_counter)
-        
-        # Trade 3: High-value trade for legendary elixir
-        trade3 = models.Trade(
+        # Sale 3: Legendary Elixir for 300 coins (available)
+        sale3 = models.Trade(
             seller_id=player3.player_id,
             item_id=legendary_elixir.id,
             item_amount=1,
-            initial_price=300,
-            status="open"
+            price=300,
+            status="available"
         )
-        db.add(trade3)
-        db.flush()
+        db.add(sale3)
         
-        # Initial seller offer for trade3
-        trade3_initial_offer = models.TradeOffer(
-            trade_id=trade3.id,
-            offerer_id=player3.player_id,
-            money_amount=300,
-            potions_offered=[],
-            is_seller_offer=True,
-            status="active"
-        )
-        db.add(trade3_initial_offer)
-        
-        # Trade 4: Completed trade (for demonstration)
-        trade4 = models.Trade(
+        # Sale 4: Another Healing Potion for cheaper (available)
+        sale4 = models.Trade(
             seller_id=player1.player_id,
             item_id=healing_potion.id,
             item_amount=1,
-            initial_price=45,
-            status="completed"
+            price=40,
+            status="available"
         )
-        db.add(trade4)
-        db.flush()
+        db.add(sale4)
         
-        # Accepted offer for trade4
-        trade4_accepted_offer = models.TradeOffer(
-            trade_id=trade4.id,
-            offerer_id=player2.player_id,
-            money_amount=45,
-            potions_offered=[],
-            is_seller_offer=False,
-            status="accepted"
-        )
-        db.add(trade4_accepted_offer)
-        
-        # Trade 5: Complex offer with money + potions
-        trade5 = models.Trade(
-            seller_id=player3.player_id,
-            item_id=legendary_elixir.id,
+        # Sale 5: Sold example (for history)
+        sale5 = models.Trade(
+            seller_id=player2.player_id,
+            item_id=mana_potion.id,
             item_amount=1,
-            initial_price=250,
-            status="in_negotiation"
+            price=65,
+            status="sold"
         )
-        db.add(trade5)
-        db.flush()
-        
-        # Initial offer (superseded)
-        trade5_initial = models.TradeOffer(
-            trade_id=trade5.id,
-            offerer_id=player3.player_id,
-            money_amount=250,
-            potions_offered=[],
-            is_seller_offer=True,
-            status="superseded"
-        )
-        db.add(trade5_initial)
-        
-        # Complex buyer offer with money + potions (active)
-        trade5_complex_offer = models.TradeOffer(
-            trade_id=trade5.id,
-            offerer_id=player1.player_id,
-            money_amount=100,
-            potions_offered=[
-                {"potion_id": healing_potion.id, "amount": 2}
-            ],
-            is_seller_offer=False,
-            status="active"
-        )
-        db.add(trade5_complex_offer)
+        db.add(sale5)
         
         db.commit()
         
-        print("\n🏪 Sample trades created successfully!")
-        print(f"📊 Trade 1: {player1.name} selling Healing Potion for 50 coins (OPEN)")
-        print(f"📊 Trade 2: {player2.name} selling Mana Potion - in negotiation at 65 coins")
-        print(f"📊 Trade 3: {player3.name} selling Legendary Elixir for 300 coins (OPEN)")
-        print(f"📊 Trade 4: Completed trade - Healing Potion sold for 45 coins")
-        print(f"📊 Trade 5: Complex offer - 100 coins + 2 Healing Potions for Legendary Elixir")
+        print("\n🏪 Sample sales created successfully!")
+        print(f"💰 Sale 1: {player1.name} selling Healing Potion for 50 coins")
+        print(f"💰 Sale 2: {player2.name} selling Mana Potion for 75 coins")
+        print(f"💰 Sale 3: {player3.name} selling Legendary Elixir for 300 coins")
+        print(f"💰 Sale 4: {player1.name} selling Healing Potion for 40 coins (cheaper!)")
+        print(f"✅ Sale 5: {player2.name} already sold Mana Potion for 65 coins")
         
     except Exception as e:
         print(f"Error creating seed trades: {e}")
@@ -339,7 +246,6 @@ def reset_db():
     try:
         db.execute(text("""
                         TRUNCATE TABLE
-                            trade_offers,
                             trades,
                             decoraion_player,
                         inventory_items,

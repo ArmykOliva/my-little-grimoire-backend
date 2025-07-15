@@ -930,11 +930,11 @@ async def add_flower(color_id: str, name:str, db: Session = Depends(get_db)):
     return {"message": "New flower added!"}
 
 
-# Trading System Endpoints
+# Trading System - Simple Buy/Sell Marketplace
 
 @app.post("/trading/create", response_model=schemas.TradeResponse, tags=["Trading"])
-async def create_trade(trade: schemas.TradeCreate, seller_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Create a new trade offer - sell a potion for money"""
+async def create_sale(trade: schemas.TradeCreate, seller_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Create a sale listing - put a potion up for sale at a fixed price"""
     
     # Verify seller exists
     seller = db.query(models.Player).filter(models.Player.player_id == seller_id).first()
@@ -954,26 +954,14 @@ async def create_trade(trade: schemas.TradeCreate, seller_id: uuid.UUID, db: Ses
     if not potion:
         raise HTTPException(status_code=404, detail="Potion not found")
     
-    # Create the trade
+    # Create the sale listing
     new_trade = models.Trade(
         seller_id=seller_id,
         item_id=trade.item_id,
         item_amount=trade.item_amount,
-        initial_price=trade.initial_price
+        price=trade.price
     )
     db.add(new_trade)
-    db.flush()
-    
-    # Create initial seller offer
-    initial_offer = models.TradeOffer(
-        trade_id=new_trade.id,
-        offerer_id=seller_id,
-        money_amount=trade.initial_price,
-        potions_offered=[],
-        is_seller_offer=True,
-        status="active"
-    )
-    db.add(initial_offer)
     db.commit()
     db.refresh(new_trade)
     
@@ -982,14 +970,14 @@ async def create_trade(trade: schemas.TradeCreate, seller_id: uuid.UUID, db: Ses
 
 @app.get("/trading/board", response_model=schemas.TradeBoardResponse, tags=["Trading"])
 async def get_trading_board(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """Get all active trades on the trading board"""
+    """Get all available items for sale"""
     
     trades = db.query(models.Trade).filter(
-        models.Trade.status.in_(["open", "in_negotiation"])
+        models.Trade.status == "available"
     ).offset(skip).limit(limit).all()
     
     total_count = db.query(models.Trade).filter(
-        models.Trade.status.in_(["open", "in_negotiation"])
+        models.Trade.status == "available"
     ).count()
     
     trade_responses = [_format_trade_response(trade, db) for trade in trades]
@@ -1000,33 +988,17 @@ async def get_trading_board(skip: int = 0, limit: int = 50, db: Session = Depend
     )
 
 
-@app.get("/trading/{trade_id}", response_model=schemas.TradeDetailResponse, tags=["Trading"])
-async def get_trade_details(trade_id: int, db: Session = Depends(get_db)):
-    """Get detailed information about a specific trade including all offers"""
+@app.post("/trading/{trade_id}/buy", response_model=schemas.TradeResponse, tags=["Trading"])
+async def buy_item(trade_id: int, buyer_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Buy an item from a sale listing"""
     
+    # Get the trade
     trade = db.query(models.Trade).filter(models.Trade.id == trade_id).first()
     if not trade:
         raise HTTPException(status_code=404, detail="Trade not found")
     
-    return _format_trade_detail_response(trade, db)
-
-
-@app.post("/trading/{trade_id}/offer", response_model=schemas.TradeDetailResponse, tags=["Trading"])
-async def make_trade_offer(
-    trade_id: int, 
-    offer: schemas.TradeOfferCreate, 
-    buyer_id: uuid.UUID, 
-    db: Session = Depends(get_db)
-):
-    """Make an offer on a trade (buyer makes counter-offer)"""
-    
-    # Verify trade exists and is active
-    trade = db.query(models.Trade).filter(models.Trade.id == trade_id).first()
-    if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    
-    if trade.status not in ["open", "in_negotiation"]:
-        raise HTTPException(status_code=400, detail="Trade is not active")
+    if trade.status != "available":
+        raise HTTPException(status_code=400, detail="Item is no longer available")
     
     # Verify buyer exists and is not the seller
     buyer = db.query(models.Player).filter(models.Player.player_id == buyer_id).first()
@@ -1034,196 +1006,28 @@ async def make_trade_offer(
         raise HTTPException(status_code=404, detail="Buyer not found")
     
     if buyer_id == trade.seller_id:
-        raise HTTPException(status_code=400, detail="Cannot make offer on your own trade")
+        raise HTTPException(status_code=400, detail="Cannot buy your own item")
     
     # Verify buyer has enough money
-    if buyer.money < offer.money_amount:
+    if buyer.money < trade.price:
         raise HTTPException(status_code=400, detail="Insufficient money")
-    
-    # Verify buyer has the offered potions
-    for potion_offer in offer.potions_offered:
-        inventory_item = db.query(models.InventoryItem).filter_by(
-            player_id=buyer_id,
-            potion_id=potion_offer.potion_id
-        ).first()
-        if not inventory_item or inventory_item.amount < potion_offer.amount:
-            raise HTTPException(status_code=400, detail=f"Insufficient potion {potion_offer.potion_id}")
-    
-    # Mark previous active offers as superseded
-    db.query(models.TradeOffer).filter(
-        models.TradeOffer.trade_id == trade_id,
-        models.TradeOffer.status == "active"
-    ).update({"status": "superseded"})
-    
-    # Create new offer
-    new_offer = models.TradeOffer(
-        trade_id=trade_id,
-        offerer_id=buyer_id,
-        money_amount=offer.money_amount,
-        potions_offered=[{"potion_id": p.potion_id, "amount": p.amount} for p in offer.potions_offered],
-        is_seller_offer=False,
-        status="active"
-    )
-    db.add(new_offer)
-    
-    # Update trade status
-    trade.status = "in_negotiation"
-    trade.updated_at = datetime.now()
-    
-    db.commit()
-    db.refresh(trade)
-    
-    return _format_trade_detail_response(trade, db)
-
-
-@app.post("/trading/{trade_id}/counter-offer", response_model=schemas.TradeDetailResponse, tags=["Trading"])
-async def make_counter_offer(
-    trade_id: int, 
-    offer: schemas.TradeOfferCreate, 
-    seller_id: uuid.UUID, 
-    db: Session = Depends(get_db)
-):
-    """Seller makes a counter-offer to buyer's offer"""
-    
-    trade = db.query(models.Trade).filter(models.Trade.id == trade_id).first()
-    if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    
-    if trade.seller_id != seller_id:
-        raise HTTPException(status_code=403, detail="Only the seller can make counter-offers")
-    
-    if trade.status not in ["in_negotiation"]:
-        raise HTTPException(status_code=400, detail="Trade must be in negotiation to counter-offer")
-    
-    # Mark previous active offers as superseded
-    db.query(models.TradeOffer).filter(
-        models.TradeOffer.trade_id == trade_id,
-        models.TradeOffer.status == "active"
-    ).update({"status": "superseded"})
-    
-    # Create seller's counter-offer
-    counter_offer = models.TradeOffer(
-        trade_id=trade_id,
-        offerer_id=seller_id,
-        money_amount=offer.money_amount,
-        potions_offered=[{"potion_id": p.potion_id, "amount": p.amount} for p in offer.potions_offered],
-        is_seller_offer=True,
-        status="active"
-    )
-    db.add(counter_offer)
-    
-    trade.updated_at = datetime.now()
-    db.commit()
-    db.refresh(trade)
-    
-    return _format_trade_detail_response(trade, db)
-
-
-@app.post("/trading/{trade_id}/accept", response_model=schemas.TradeDetailResponse, tags=["Trading"])
-async def accept_trade_offer(trade_id: int, accepter_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Accept the current active offer on a trade"""
-    
-    trade = db.query(models.Trade).filter(models.Trade.id == trade_id).first()
-    if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    
-    if trade.status not in ["open", "in_negotiation"]:
-        raise HTTPException(status_code=400, detail="Trade is not active")
-    
-    # Get the active offer
-    active_offer = db.query(models.TradeOffer).filter(
-        models.TradeOffer.trade_id == trade_id,
-        models.TradeOffer.status == "active"
-    ).first()
-    
-    if not active_offer:
-        raise HTTPException(status_code=400, detail="No active offer to accept")
-    
-    # Determine buyer and seller based on who's accepting
-    if accepter_id == trade.seller_id:
-        # Seller accepting buyer's offer
-        if active_offer.is_seller_offer:
-            raise HTTPException(status_code=400, detail="Cannot accept your own offer")
-        buyer_id = active_offer.offerer_id
-        seller_id = trade.seller_id
-    else:
-        # Buyer accepting seller's offer
-        if not active_offer.is_seller_offer:
-            raise HTTPException(status_code=400, detail="Cannot accept your own offer")
-        buyer_id = accepter_id
-        seller_id = trade.seller_id
-        
-        # Verify this person can accept (is involved in the trade)
-        if accepter_id != active_offer.offerer_id and accepter_id != trade.seller_id:
-            # Check if they made any previous offers
-            previous_offer = db.query(models.TradeOffer).filter(
-                models.TradeOffer.trade_id == trade_id,
-                models.TradeOffer.offerer_id == accepter_id
-            ).first()
-            if not previous_offer:
-                raise HTTPException(status_code=403, detail="You are not involved in this trade")
-    
-    # Get buyer and seller objects
-    buyer = db.query(models.Player).filter(models.Player.player_id == buyer_id).first()
-    seller = db.query(models.Player).filter(models.Player.player_id == seller_id).first()
-    
-    # Verify buyer has enough money
-    if buyer.money < active_offer.money_amount:
-        raise HTTPException(status_code=400, detail="Buyer has insufficient money")
-    
-    # Verify buyer has offered potions
-    for potion_data in active_offer.potions_offered:
-        inventory_item = db.query(models.InventoryItem).filter_by(
-            player_id=buyer_id,
-            potion_id=potion_data["potion_id"]
-        ).first()
-        if not inventory_item or inventory_item.amount < potion_data["amount"]:
-            raise HTTPException(status_code=400, detail="Buyer has insufficient potions")
     
     # Verify seller still has the item
     seller_inventory = db.query(models.InventoryItem).filter_by(
-        player_id=seller_id,
+        player_id=trade.seller_id,
         potion_id=trade.item_id
     ).first()
     if not seller_inventory or seller_inventory.amount < trade.item_amount:
         raise HTTPException(status_code=400, detail="Seller no longer has the item")
     
     # Execute the trade
+    seller = trade.seller
     
     # Transfer money
-    buyer.money -= active_offer.money_amount
-    seller.money += active_offer.money_amount
+    buyer.money -= trade.price
+    seller.money += trade.price
     
-    # Transfer potions offered by buyer to seller
-    for potion_data in active_offer.potions_offered:
-        # Remove from buyer
-        buyer_item = db.query(models.InventoryItem).filter_by(
-            player_id=buyer_id,
-            potion_id=potion_data["potion_id"]
-        ).first()
-        
-        if buyer_item.amount > potion_data["amount"]:
-            buyer_item.amount -= potion_data["amount"]
-        else:
-            db.delete(buyer_item)
-        
-        # Add to seller
-        seller_item = db.query(models.InventoryItem).filter_by(
-            player_id=seller_id,
-            potion_id=potion_data["potion_id"]
-        ).first()
-        
-        if seller_item:
-            seller_item.amount += potion_data["amount"]
-        else:
-            new_item = models.InventoryItem(
-                player_id=seller_id,
-                potion_id=potion_data["potion_id"],
-                amount=potion_data["amount"]
-            )
-            db.add(new_item)
-    
-    # Transfer the main item from seller to buyer
+    # Transfer the item from seller to buyer
     if seller_inventory.amount > trade.item_amount:
         seller_inventory.amount -= trade.item_amount
     else:
@@ -1245,147 +1049,58 @@ async def accept_trade_offer(trade_id: int, accepter_id: uuid.UUID, db: Session 
         )
         db.add(new_item)
     
-    # Mark offer as accepted and trade as completed
-    active_offer.status = "accepted"
-    trade.status = "completed"
-    trade.updated_at = datetime.now()
+    # Mark trade as sold
+    trade.status = "sold"
     
     db.commit()
     db.refresh(trade)
     
-    return _format_trade_detail_response(trade, db)
+    return _format_trade_response(trade, db)
 
 
 @app.delete("/trading/{trade_id}/cancel", tags=["Trading"])
-async def cancel_trade(trade_id: int, seller_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Cancel a trade (only the seller can cancel)"""
+async def cancel_sale(trade_id: int, seller_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Cancel a sale listing (only the seller can cancel)"""
     
     trade = db.query(models.Trade).filter(models.Trade.id == trade_id).first()
     if not trade:
         raise HTTPException(status_code=404, detail="Trade not found")
     
     if trade.seller_id != seller_id:
-        raise HTTPException(status_code=403, detail="Only the seller can cancel the trade")
+        raise HTTPException(status_code=403, detail="Only the seller can cancel the sale")
     
-    if trade.status not in ["open", "in_negotiation"]:
-        raise HTTPException(status_code=400, detail="Can only cancel active trades")
+    if trade.status != "available":
+        raise HTTPException(status_code=400, detail="Can only cancel available sales")
     
     trade.status = "cancelled"
-    trade.updated_at = datetime.now()
     
     db.commit()
     
-    return {"message": "Trade cancelled successfully"}
+    return {"message": "Sale cancelled successfully"}
 
 
 @app.get("/players/{player_id}/trades/selling", response_model=List[schemas.TradeResponse], tags=["Trading"])
-async def get_player_selling_trades(player_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Get all trades where the player is the seller"""
+async def get_player_sales(player_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Get all sales by a player"""
     
     trades = db.query(models.Trade).filter(models.Trade.seller_id == player_id).all()
     return [_format_trade_response(trade, db) for trade in trades]
 
 
-@app.get("/players/{player_id}/trades/buying", response_model=List[schemas.TradeResponse], tags=["Trading"])
-async def get_player_buying_trades(player_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Get all trades where the player has made offers"""
-    
-    # Get trades where player has made offers
-    trade_ids = db.query(models.TradeOffer.trade_id).filter(
-        models.TradeOffer.offerer_id == player_id,
-        models.TradeOffer.is_seller_offer == False
-    ).distinct().all()
-    
-    trade_ids = [t[0] for t in trade_ids]
-    
-    if not trade_ids:
-        return []
-    
-    trades = db.query(models.Trade).filter(models.Trade.id.in_(trade_ids)).all()
-    return [_format_trade_response(trade, db) for trade in trades]
-
-
-# Helper functions for trading
+# Helper function for trading
 def _format_trade_response(trade: models.Trade, db: Session) -> schemas.TradeResponse:
-    """Format a trade for the trading board response"""
-    
-    # Get current active offer
-    current_offer = db.query(models.TradeOffer).filter(
-        models.TradeOffer.trade_id == trade.id,
-        models.TradeOffer.status == "active"
-    ).first()
-    
-    # Get offer count
-    offer_count = db.query(models.TradeOffer).filter(
-        models.TradeOffer.trade_id == trade.id
-    ).count()
-    
-    current_offer_response = None
-    if current_offer:
-        current_offer_response = _format_offer_response(current_offer, db)
+    """Format a trade for response"""
     
     return schemas.TradeResponse(
         id=trade.id,
         seller_id=trade.seller_id,
         seller_name=trade.seller.name,
-        item_type=trade.item_type,
         item_id=trade.item_id,
         item_name=trade.item.name,
         item_amount=trade.item_amount,
-        initial_price=trade.initial_price,
+        price=trade.price,
         status=trade.status,
-        created_at=trade.created_at,
-        updated_at=trade.updated_at,
-        current_offer=current_offer_response,
-        offer_count=offer_count
-    )
-
-
-def _format_trade_detail_response(trade: models.Trade, db: Session) -> schemas.TradeDetailResponse:
-    """Format a trade with all offers for detailed view"""
-    
-    offers = db.query(models.TradeOffer).filter(
-        models.TradeOffer.trade_id == trade.id
-    ).order_by(models.TradeOffer.created_at.desc()).all()
-    
-    offer_responses = [_format_offer_response(offer, db) for offer in offers]
-    
-    return schemas.TradeDetailResponse(
-        id=trade.id,
-        seller_id=trade.seller_id,
-        seller_name=trade.seller.name,
-        item_type=trade.item_type,
-        item_id=trade.item_id,
-        item_name=trade.item.name,
-        item_amount=trade.item_amount,
-        initial_price=trade.initial_price,
-        status=trade.status,
-        created_at=trade.created_at,
-        updated_at=trade.updated_at,
-        offers=offer_responses
-    )
-
-
-def _format_offer_response(offer: models.TradeOffer, db: Session) -> schemas.TradeOfferResponse:
-    """Format a trade offer response"""
-    
-    potions_offered = []
-    for potion_data in offer.potions_offered:
-        potions_offered.append(schemas.PotionOffer(
-            potion_id=potion_data["potion_id"],
-            amount=potion_data["amount"]
-        ))
-    
-    return schemas.TradeOfferResponse(
-        id=offer.id,
-        trade_id=offer.trade_id,
-        offerer_id=offer.offerer_id,
-        offerer_name=offer.offerer.name,
-        money_amount=offer.money_amount,
-        potions_offered=potions_offered,
-        status=offer.status,
-        is_seller_offer=offer.is_seller_offer,
-        created_at=offer.created_at
+        created_at=trade.created_at
     )
 
 

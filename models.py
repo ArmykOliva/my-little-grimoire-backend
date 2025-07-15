@@ -201,38 +201,18 @@ class DecorationPlayer(Base):
     decoration = relationship("Decoration")
 
 
-# Trading System
+# Trading System - Simple Sale Listings
 class Trade(Base):
     __tablename__ = "trades"
     
     id = Column(Integer, primary_key=True, index=True)
     seller_id = Column(UUID(as_uuid=True), ForeignKey("players.player_id", ondelete="CASCADE"), nullable=False)
-    item_type = Column(String, nullable=False, default="potion")  # For future extensibility
     item_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)  # Potion being sold
     item_amount = Column(Integer, nullable=False, default=1)
-    initial_price = Column(Integer, nullable=False)  # Initial asking price
-    status = Column(String, nullable=False, default="open")  # open, in_negotiation, completed, cancelled
+    price = Column(Integer, nullable=False)  # Fixed sale price
+    status = Column(String, nullable=False, default="available")  # available, sold, cancelled
     created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
     # Relationships
     seller = relationship("Player", foreign_keys=[seller_id])
     item = relationship("Recipe")  # The potion being sold
-    offers = relationship("TradeOffer", back_populates="trade", cascade="all, delete-orphan")
-
-
-class TradeOffer(Base):
-    __tablename__ = "trade_offers"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    trade_id = Column(Integer, ForeignKey("trades.id", ondelete="CASCADE"), nullable=False)
-    offerer_id = Column(UUID(as_uuid=True), ForeignKey("players.player_id", ondelete="CASCADE"), nullable=False)
-    money_amount = Column(Integer, nullable=False, default=0)  # Money being offered
-    potions_offered = Column(MutableList.as_mutable(JSON), default=[])  # List of {potion_id, amount}
-    status = Column(String, nullable=False, default="active")  # active, accepted, rejected, superseded
-    is_seller_offer = Column(Boolean, nullable=False, default=False)  # True if this is seller's counter-offer
-    created_at = Column(DateTime, default=datetime.now)
-    
-    # Relationships
-    trade = relationship("Trade", back_populates="offers")
-    offerer = relationship("Player", foreign_keys=[offerer_id])
