@@ -49,7 +49,6 @@ def create_sample_data():
             {"color_id": "red", "name": "Sanguine Rose"},
             {"color_id": "white", "name": "Angelbud"},
             {"color_id": "yellow", "name": "Solaria's Crown"},
-            {"color_id": "black", "name": "Mystic Azurea"},
         ]
 
         flower_map = {}
