@@ -12,11 +12,23 @@ def create_sample_data():
     db = SessionLocal()
     try:
         sample_decorations = [
-            {"name":"A", "allowed_position": 0b11111, "cost": 50},
-            {"name":"B","allowed_position": 0b00100, "cost": 10},
-            {"name":"C","allowed_position": 0b11000, "cost": 150},
-            {"name":"D","allowed_position": 0b00011, "cost": 10},
-            {"name":"E","allowed_position": 0b10101, "cost": 10},
+            {"name":"Cat moon painting orange yellow", "allowed_position": 0b001, "cost": 1000},
+            {"name":"Cat moon painting red blue","allowed_position": 0b001, "cost": 1000},
+            {"name":"Grimeow bed green yellow","allowed_position": 0b010, "cost": 600},
+            {"name":"Grimeow bed Jade green yellow","allowed_position": 0b010, "cost": 400},
+            {"name":"Grimeow bed purple green","allowed_position": 0b010, "cost": 400},
+            {"name": "Grimeow bed purple jade green", "allowed_position": 0b010, "cost": 500},
+            {"name": "Grimeow bed purple yellow", "allowed_position": 0b010, "cost": 500},
+            {"name": "Grimeow bed red black", "allowed_position": 0b010, "cost": 300},
+            {"name": "Grimeow bed red yellow", "allowed_position": 0b010, "cost": 200},
+            {"name": "Hanging rack", "allowed_position": 0b100, "cost": 800},
+            {"name":"Moon landscape painting","allowed_position": 0b001, "cost": 500},
+            {"name": "Sunrise landscape painting", "allowed_position": 0b001, "cost": 600},
+            {"name": "Vase green yellow", "allowed_position": 0b100, "cost": 200},
+            {"name": "Vase Jade yellow", "allowed_position": 0b100, "cost": 100},
+            {"name": "Vase purple Jade", "allowed_position": 0b100, "cost": 150},
+            {"name": "Vase purple yellow", "allowed_position": 0b100, "cost": 125},
+            {"name": "Vase red yellow", "allowed_position": 0b100, "cost": 250},
         ]
 
         for decoration_data in sample_decorations:
@@ -27,15 +39,17 @@ def create_sample_data():
         print("Sample decorations added successfully")
         # Create sample flowers
         sample_flowers = [
+
             {"color_id": "blue", "name": "Mystic Azurea"},
             {"color_id": "coral", "name": "Coralia Blossom"},
             {"color_id": "lilac", "name": "Moonbell"},
             {"color_id": "orange", "name": "Cinderflare"},
             {"color_id": "pink", "name": "Feypetal"},
-            {"color_id": "purple", "name": "Vesperthorn"},
+            {"color_id": "black", "name": "Vesperthorn"},
             {"color_id": "red", "name": "Sanguine Rose"},
             {"color_id": "white", "name": "Angelbud"},
             {"color_id": "yellow", "name": "Solaria's Crown"},
+            {"color_id": "black", "name": "Mystic Azurea"},
         ]
 
         flower_map = {}
@@ -49,20 +63,88 @@ def create_sample_data():
         print("Flowers added!")
         # Create sample recipes
 
-        healing_potion = models.Recipe(name = "Healing Potion", required_flowers=[flower_map["red"], flower_map["lilac"]])
-        db.add(healing_potion)
-        db.commit()
-        mana_potion = models.Recipe(name = "Mana Potion", required_flowers=[flower_map["white"], flower_map["purple"]])
-        db.add(mana_potion)
-        db.commit()
-        legendary_elixir = models.Recipe(
-            name="Legendary Elixir",
-            required_flowers=[flower_map["yellow"]],
-            required_potions=[healing_potion, mana_potion])
-        db.add(legendary_elixir)
+        # Sleep Potion
+        sleep_potion = models.Recipe(
+            name="Sleep Potion",
+            required_flowers=[flower_map["blue"]],
+            required_potions=[]
+        )
+        db.add(sleep_potion)
         db.commit()
 
-        print ("Flowers added!")
+        # Death Potion
+        death_potion = models.Recipe(
+            name="Death Potion",
+            required_flowers=[flower_map["white"], flower_map["black"]],
+            required_potions=[]
+        )
+        db.add(death_potion)
+        db.commit()
+
+        # Beauty Potion
+        beauty_potion = models.Recipe(
+            name="Beauty Potion",
+            required_flowers=[flower_map["white"], flower_map["pink"]],
+            required_potions=[]
+        )
+        db.add(beauty_potion)
+        db.commit()
+
+        # Eternal Wealth
+        eternal_wealth = models.Recipe(
+            name="Eternal Wealth",
+            required_flowers=[flower_map["yellow"], flower_map["orange"], flower_map["blue"]],
+            required_potions=[]
+        )
+        db.add(eternal_wealth)
+        db.commit()
+
+        # Eternal Health
+        eternal_health = models.Recipe(
+            name="Eternal Health",
+            required_flowers=[flower_map["red"], flower_map["lilac"]],
+            required_potions=[death_potion]
+        )
+        db.add(eternal_health)
+        db.commit()
+
+        # Eternal Happiness
+        eternal_happiness = models.Recipe(
+            name="Eternal Happiness",
+            required_flowers=[flower_map["yellow"], flower_map["white"]],
+            required_potions=[eternal_health, beauty_potion, eternal_wealth]
+        )
+        db.add(eternal_happiness)
+        db.commit()
+
+        # Love Potion
+        love_potion = models.Recipe(
+            name="Love Potion",
+            required_flowers=[flower_map["red"], flower_map["pink"], flower_map["white"], flower_map["orange"]],
+            required_potions=[beauty_potion]
+        )
+        db.add(love_potion)
+        db.commit()
+
+        # Painless Death = Death Potion
+        painless_death = models.Recipe(
+            name="Painless Death",
+            required_flowers=[flower_map["blue"], flower_map["black"], flower_map["white"]],
+            required_potions=[death_potion]
+        )
+        db.add(painless_death)
+        db.commit()
+
+        # Wolf
+        wolf = models.Recipe(
+            name="Wolf",
+            required_flowers=[flower_map["blue"], flower_map["yellow"], flower_map["lilac"]],
+            required_potions=[sleep_potion]
+        )
+        db.add(wolf)
+        db.commit()
+
+        print ("Potions added!")
         # Create a sample player
         existing_player = db.query(models.Player).filter(models.Player.name == "Player").first()
         if not existing_player:
@@ -124,7 +206,7 @@ def create_sample_data():
             print(f"\nSample player UUID for testing: {sample_player.player_id}")
 
         # Create seed trades
-        create_seed_trades(db, healing_potion, mana_potion, legendary_elixir)
+        create_seed_trades(db, death_potion, eternal_health, sleep_potion)
         
     except Exception as e:
         print(f"Error creating sample data: {e}")
@@ -132,7 +214,7 @@ def create_sample_data():
     finally:
         db.close()
 
-def create_seed_trades(db: Session, healing_potion, mana_potion, legendary_elixir):
+def create_seed_trades(db: Session, death_potion, eternal_health, sleep_potion):
     """Create sample simple sale listings"""
     try:
         # Get players
@@ -145,29 +227,29 @@ def create_seed_trades(db: Session, healing_potion, mana_potion, legendary_elixi
         player3 = players[2] if len(players) > 2 else player1
         
         # Give players some inventory for trading
-        # Player 1 gets healing potions
-        healing_inventory = models.InventoryItem(
+        # Player 1 gets death potions
+        sleep_potion_inventory = models.InventoryItem(
             player_id=player1.player_id,
-            potion_id=healing_potion.id,
+            potion_id=sleep_potion.id,
             amount=3
         )
-        db.add(healing_inventory)
+        db.add(sleep_potion_inventory)
         
-        # Player 2 gets mana potions
-        mana_inventory = models.InventoryItem(
+        # Player 2 gets death_potion
+        death_potion_inventory = models.InventoryItem(
             player_id=player2.player_id,
-            potion_id=mana_potion.id,
+            potion_id=death_potion.id,
             amount=2
         )
-        db.add(mana_inventory)
+        db.add(death_potion_inventory)
         
         # Player 3 gets legendary elixir
-        legendary_inventory = models.InventoryItem(
+        eternal_health_inventory = models.InventoryItem(
             player_id=player3.player_id,
-            potion_id=legendary_elixir.id,
+            potion_id=eternal_health.id,
             amount=1
         )
-        db.add(legendary_inventory)
+        db.add(eternal_health)
         
         # Give players more money for trading
         player1.money = 200
@@ -177,69 +259,103 @@ def create_seed_trades(db: Session, healing_potion, mana_potion, legendary_elixi
         db.commit()
         
         # Simple sale listings
-        
-        # Sale 1: Healing Potion for 50 coins (available)
+
+        # Player 1 gets 3 Sleep Potions
+        sleep_potion_inventory = models.InventoryItem(
+            player_id=player1.player_id,
+            potion_id=sleep_potion.id,
+            amount=3
+        )
+        db.add(sleep_potion_inventory)
+
+        # Player 2 gets 2 Death Potions
+        death_potion_inventory = models.InventoryItem(
+            player_id=player2.player_id,
+            potion_id=death_potion.id,
+            amount=2
+        )
+        db.add(death_potion_inventory)
+
+        # Player 3 gets 1 Eternal Health potion (legendary)
+        eternal_health_inventory = models.InventoryItem(
+            player_id=player3.player_id,
+            potion_id=eternal_health.id,
+            amount=1
+        )
+        db.add(eternal_health_inventory)
+
+        # Add some money to players for trading
+        player1.money = 200
+        player2.money = 150
+        player3.money = 500
+
+        db.commit()
+
+        # Create trade listings
+
+        # Sale 1: Sleep Potion for 50 coins (available)
         sale1 = models.Trade(
             seller_id=player1.player_id,
-            item_id=healing_potion.id,
+            item_id=sleep_potion.id,
             item_amount=1,
             price=50,
             status="available"
         )
         db.add(sale1)
-        
-        # Sale 2: Mana Potion for 75 coins (available)
+
+        # Sale 2: Death Potion for 75 coins (available)
         sale2 = models.Trade(
             seller_id=player2.player_id,
-            item_id=mana_potion.id,
+            item_id=death_potion.id,
             item_amount=1,
             price=75,
             status="available"
         )
         db.add(sale2)
-        
-        # Sale 3: Legendary Elixir for 300 coins (available)
+
+        # Sale 3: Eternal Health for 300 coins (available)
         sale3 = models.Trade(
             seller_id=player3.player_id,
-            item_id=legendary_elixir.id,
+            item_id=eternal_health.id,
             item_amount=1,
             price=300,
             status="available"
         )
         db.add(sale3)
-        
-        # Sale 4: Another Healing Potion for cheaper (available)
+
+        # Sale 4: Another Eternal Health for 40 coins (cheaper))
         sale4 = models.Trade(
             seller_id=player1.player_id,
-            item_id=healing_potion.id,
+            item_id=eternal_health.id,
             item_amount=1,
             price=40,
             status="available"
         )
         db.add(sale4)
-        
-        # Sale 5: Sold example (for history)
+
+        # Sale 5: A previously sold Death Potion for 65 coins
         sale5 = models.Trade(
             seller_id=player2.player_id,
-            item_id=mana_potion.id,
+            item_id=death_potion.id,
             item_amount=1,
             price=65,
             status="sold"
         )
         db.add(sale5)
-        
+
         db.commit()
-        
+
+        # Output summary
         print("\n🏪 Sample sales created successfully!")
-        print(f"💰 Sale 1: {player1.name} selling Healing Potion for 50 coins")
-        print(f"💰 Sale 2: {player2.name} selling Mana Potion for 75 coins")
-        print(f"💰 Sale 3: {player3.name} selling Legendary Elixir for 300 coins")
-        print(f"💰 Sale 4: {player1.name} selling Healing Potion for 40 coins (cheaper!)")
-        print(f"✅ Sale 5: {player2.name} already sold Mana Potion for 65 coins")
-        
+        print(f"💤 Sale 1: {player1.name} selling Sleep Potion for 50 coins")
+        print(f"💀 Sale 2: {player2.name} selling Death Potion for 75 coins")
+        print(f"🧬 Sale 3: {player3.name} selling Eternal Health for 300 coins")
+        print(f"💸 Sale 4: {player1.name} selling Eternal Health for 40 coins (cheap!)")
+        print(f"✅ Sale 5: {player2.name} already sold Death Potion for 65 coins")
+
     except Exception as e:
-        print(f"Error creating seed trades: {e}")
-        db.rollback()
+            print(f"Error creating seed trades: {e}")
+            db.rollback()
 
 def reset_db():
     db = SessionLocal()

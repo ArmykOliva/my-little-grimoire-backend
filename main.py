@@ -371,7 +371,7 @@ async def buy_decoration(player_id: uuid.UUID, decoration_id: int, db: Session =
 
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
-        HTTPException(status_code=404, detail="Player not found")
+        raise HTTPException(status_code=404, detail="Player not found")
 
     if player.money < decoration.cost:
         raise HTTPException(400, "Insufficient funds")
@@ -720,14 +720,14 @@ async def collect_flower(player_id: uuid.UUID, image: UploadFile = File(...), db
 
     # Check if flower color matches player's shears
     if flower.id != player.assigned_flower:
-        raise HTTPException(status_code=400, detail="You cannot collect this flower!")
+        raise HTTPException(status_code=400, detail="You cannot collect this flower! Your flower was identified as " + flower.color_id)
 
     # Add flower to session's collected flowers
     recipe = db.query(models.Recipe).get(session.recipe_id)
     recipe_flower_ids = {f.id for f in recipe.required_flowers}
 
     if flower.id not in recipe_flower_ids:
-        raise HTTPException(status_code=400, detail="This flower is not required for the recipe")
+        raise HTTPException(status_code=400, detail="This flower is not required for the recipe. Your flower was identified as "+ flower.color_id)
 
     session.flowers_collected.append(flower)
 
