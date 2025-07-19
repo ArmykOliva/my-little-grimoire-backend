@@ -193,6 +193,7 @@ class TradeResponse(BaseModel):
     id: int
     seller_id: uuid.UUID
     seller_name: str
+    seller_picture: int
     item_id: int
     item_name: str
     item_amount: int

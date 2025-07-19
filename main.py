@@ -953,7 +953,13 @@ async def create_sale(trade: schemas.TradeCreate, seller_id: uuid.UUID, db: Sess
     potion = db.query(models.Recipe).filter(models.Recipe.id == trade.item_id).first()
     if not potion:
         raise HTTPException(status_code=404, detail="Potion not found")
-    
+
+
+    #delete potions from inventory
+    if inventory_item.amount > trade.item_amount:
+        inventory_item.amount -= trade.item_amount
+    else:
+        db.delete(inventory_item)
     # Create the sale listing
     new_trade = models.Trade(
         seller_id=seller_id,
@@ -992,33 +998,43 @@ async def get_trading_board(skip: int = 0, limit: int = 50, db: Session = Depend
 async def buy_item(trade_id: int, buyer_id: uuid.UUID, db: Session = Depends(get_db)):
     """Buy an item from a sale listing"""
     
-    # Get the trade
-    trade = db.query(models.Trade).filter(models.Trade.id == trade_id).first()
-    if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
+    # Get the trade and make sure nobody is currently buying the item
+    try:
+        trade = db.query(models.Trade).filter(models.Trade.id == trade_id).with_for_update().first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
     
-    if trade.status != "available":
-        raise HTTPException(status_code=400, detail="Item is no longer available")
-    
+        if trade.status != "available":
+            raise HTTPException(status_code=400, detail="Item is no longer available")
+        trade.status = "processing"
+        db.commit()
+        db.refresh(trade)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
     # Verify buyer exists and is not the seller
     buyer = db.query(models.Player).filter(models.Player.player_id == buyer_id).first()
     if not buyer:
+        trade.status = "available"
         raise HTTPException(status_code=404, detail="Buyer not found")
     
     if buyer_id == trade.seller_id:
+        trade.status = "available"
         raise HTTPException(status_code=400, detail="Cannot buy your own item")
     
     # Verify buyer has enough money
     if buyer.money < trade.price:
+        trade.status = "available"
         raise HTTPException(status_code=400, detail="Insufficient money")
     
-    # Verify seller still has the item
-    seller_inventory = db.query(models.InventoryItem).filter_by(
-        player_id=trade.seller_id,
-        potion_id=trade.item_id
-    ).first()
-    if not seller_inventory or seller_inventory.amount < trade.item_amount:
-        raise HTTPException(status_code=400, detail="Seller no longer has the item")
+    # # Verify seller still has the item
+    # seller_inventory = db.query(models.InventoryItem).filter_by(
+    #     player_id=trade.seller_id,
+    #     potion_id=trade.item_id
+    # ).first()
+    # if not seller_inventory or seller_inventory.amount < trade.item_amount:
+    #     raise HTTPException(status_code=400, detail="Seller no longer has the item")
     
     # Execute the trade
     seller = trade.seller
@@ -1026,12 +1042,6 @@ async def buy_item(trade_id: int, buyer_id: uuid.UUID, db: Session = Depends(get
     # Transfer money
     buyer.money -= trade.price
     seller.money += trade.price
-    
-    # Transfer the item from seller to buyer
-    if seller_inventory.amount > trade.item_amount:
-        seller_inventory.amount -= trade.item_amount
-    else:
-        db.delete(seller_inventory)
     
     # Add item to buyer
     buyer_item = db.query(models.InventoryItem).filter_by(
@@ -1061,18 +1071,38 @@ async def buy_item(trade_id: int, buyer_id: uuid.UUID, db: Session = Depends(get
 @app.delete("/trading/{trade_id}/cancel", tags=["Trading"])
 async def cancel_sale(trade_id: int, seller_id: uuid.UUID, db: Session = Depends(get_db)):
     """Cancel a sale listing (only the seller can cancel)"""
-    
-    trade = db.query(models.Trade).filter(models.Trade.id == trade_id).first()
-    if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    
-    if trade.seller_id != seller_id:
-        raise HTTPException(status_code=403, detail="Only the seller can cancel the sale")
-    
-    if trade.status != "available":
-        raise HTTPException(status_code=400, detail="Can only cancel available sales")
-    
-    trade.status = "cancelled"
+    try:
+        trade = db.query(models.Trade).filter(models.Trade.id == trade_id).with_for_update().first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
+
+        if trade.seller_id != seller_id:
+            raise HTTPException(status_code=403, detail="Only the seller can cancel the sale")
+
+        if trade.status != "available":
+            raise HTTPException(status_code=400, detail="Can only cancel available sales")
+
+        trade.status = "cancelled"
+        db.commit()
+        db.refresh(trade)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    #return item to the seller
+    seller_item = db.query(models.InventoryItem).filter_by(
+        player_id=seller_id,
+        potion_id=trade.item_id
+    ).first()
+    if seller_item:
+        seller_item.amount += trade.item_amount
+    else:
+        new_item = models.InventoryItem(
+            player_id=seller_id,
+            potion_id=trade.item_id,
+            amount=trade.item_amount
+        )
+        db.add(new_item)
     
     db.commit()
     
@@ -1095,6 +1125,7 @@ def _format_trade_response(trade: models.Trade, db: Session) -> schemas.TradeRes
         id=trade.id,
         seller_id=trade.seller_id,
         seller_name=trade.seller.name,
+        seller_picture = trade.seller.picture,
         item_id=trade.item_id,
         item_name=trade.item.name,
         item_amount=trade.item_amount,
