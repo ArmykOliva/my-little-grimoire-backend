@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from typing import Optional
+
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List
 import models, schemas
@@ -105,80 +107,80 @@ async def get_player(player_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Player not found")
     return db_player
 
+@app.post("/players/{player_id}/add-friend/{other_id}", tags=["Friends"])
+async def add_friend(player_id: uuid.UUID, other_id: uuid.UUID, db: Session = Depends(get_db)):
+    if player_id == other_id:
+        raise HTTPException(status_code=400, detail="Cannot add yourself")
 
-@app.post("/players/{player_id}/follow/{followed_id}", tags = ["Followers"])
-async def follow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
-
-    if player_id == followed_id:
-        raise HTTPException(status_code=404, detail="Cannot follow yourself")
-    follower = db.query(models.Player).filter(models.Player.player_id == player_id).first()
-    followed = db.query(models.Player).filter(models.Player.player_id ==followed_id).first()
-
-    if not follower or not followed:
+    p1 = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    p2 = db.query(models.Player).filter(models.Player.player_id == other_id).first()
+    if not p1 or not p2:
         raise HTTPException(status_code=404, detail="Player(s) not found")
 
-    existing = db.query(models.PlayerFollower).filter_by(
-        follower_id=follower.id,
-        followed_id=followed.id
-    ).first()
+    id1, id2 = utils.get_ordered_ids(p1.player_id, p2.player_id)
+    existing = db.query(models.PlayerFriendship).filter_by(player1_id=id1, player2_id=id2).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Already following this player")
+        raise HTTPException(status_code=400, detail="Already friends")
 
-    follow = models.PlayerFollower(
-        follower_id=follower.id,
-        followed_id=followed.id
-    )
-    db.add(follow)
+    friendship = models.PlayerFriendship(player1_id=id1, player2_id=id2)
+    db.add(friendship)
     db.commit()
-    return {"message": "Followed successfully"}
+    return {"message": "Friendship created"}
 
-
-@app.post("/players/{player_id}/unfollow/{followed_id}", tags = ["Followers"])
-async def unfollow_player(player_id: uuid.UUID, followed_id: uuid.UUID, db: Session = Depends(get_db)):
-    follower = db.query(models.Player).filter(models.Player.player_id == player_id).first()
-    followed = db.query(models.Player).filter(models.Player.player_id == followed_id).first()
-
-    if not follower or not followed:
+@app.post("/players/{player_id}/remove-friend/{other_id}", tags=["Friends"])
+async def remove_friend(player_id: uuid.UUID, other_id: uuid.UUID, db: Session = Depends(get_db)):
+    p1 = db.query(models.Player).filter(models.Player.player_id == player_id).first()
+    p2 = db.query(models.Player).filter(models.Player.player_id == other_id).first()
+    if not p1 or not p2:
         raise HTTPException(status_code=404, detail="Player(s) not found")
 
-    deleted = db.query(models.PlayerFollower).filter_by(
-        follower_id=follower.id,
-        followed_id=followed.id
-    ).delete()
+    id1, id2 = utils.get_ordered_ids(p1.player_id, p2.player_id)
+    deleted = db.query(models.PlayerFriendship).filter_by(player1_id=id1, player2_id=id2).delete()
 
     if not deleted:
-        raise HTTPException(status_code=400, detail="Not following this player")
+        raise HTTPException(status_code=400, detail="Not friends")
 
     db.commit()
-    return {"message": "Unfollowed successfully"}
+    return {"message": "Friendship removed"}
 
-@app.get("/players/{player_id}/followers", response_model=List[schemas.Player], tags = ["Followers"])
-async def get_followers(player_id: uuid.UUID, db: Session = Depends(get_db)):
+@app.get("/players/{player_id}/friends", response_model=List[schemas.FriendshipData], tags=["Friends"])
+async def get_friends(player_id: uuid.UUID, db: Session = Depends(get_db)):
     player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    followers = (
-        db.query(models.Player)
-        .join(models.PlayerFollower, models.Player.id == models.PlayerFollower.follower_id)
-        .filter(models.PlayerFollower.followed_id == player.id)
-        .all()
-    )
-    return followers
+    friendships = (db.query(models.PlayerFriendship)
+                   .filter(
+                        or_(
+                            models.PlayerFriendship.player1_id == player_id,
+                            models.PlayerFriendship.player2_id == player_id
+                        )
+                    )
+                   .all())
 
-@app.get("/players/{player_id}/following", response_model=List[schemas.Player], tags = ["Followers"])
-async def get_following(player_id: uuid.UUID, db: Session = Depends(get_db)):
-    player = db.query(models.Player).filter(models.Player.player_id == player_id).first()
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
+    results = []
+    for friendship in friendships:
+        friend_id = (
+            friendship.player2_id
+            if friendship.player1_id == player_id
+            else friendship.player1_id
+        )
 
-    following = (
-        db.query(models.Player)
-        .join(models.PlayerFollower, models.Player.id == models.PlayerFollower.followed_id)
-        .filter(models.PlayerFollower.follower_id == player.id)
-        .all()
-    )
-    return following
+        friend = db.query(models.Player).filter(models.Player.player_id == friend_id).first()
+        if friend:
+            results.append(
+                schemas.FriendshipData(
+                    friend=schemas.FriendInfo(name = friend.name, profile_picture = friend.profile_picture, player_id = friend.player_id),
+                    potions_together=friendship.potions_together
+                )
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Error getting information about friends")
+
+    return results
+
+
+
 
 #Customers
 @app.put("/players/{player_id}/customer/{customer_id}", response_model=schemas.Player, tags = ["Customers"])
@@ -739,6 +741,18 @@ async def collect_flower(player_id: uuid.UUID, image: UploadFile = File(...), db
         session.status = 2  # Complete
         for potion in [p.id for p in recipe.required_potions]:
             remove_potion_from_inventory_func(session.initial_player,potion, db)
+        player_uuids = [p.player_id for p in session.players]
+        for i in range(len(player_uuids)):
+            for j in range(i + 1, len(player_uuids)):
+                uuid1, uuid2 = utils.get_ordered_ids(player_uuids[i], player_uuids[j])
+
+                friendship = db.query(models.PlayerFriendship).filter_by(
+                    player1_id=uuid1,
+                    player2_id=uuid2
+                ).first()
+
+                if friendship:
+                    friendship.potions_together += 1
 
     db.commit()
     db.refresh(session)
@@ -1125,7 +1139,7 @@ def _format_trade_response(trade: models.Trade, db: Session) -> schemas.TradeRes
         id=trade.id,
         seller_id=trade.seller_id,
         seller_name=trade.seller.name,
-        seller_picture = trade.seller.picture,
+        seller_picture = trade.seller.profile_picture,
         item_id=trade.item_id,
         item_name=trade.item.name,
         item_amount=trade.item_amount,
@@ -1214,7 +1228,18 @@ async def collect_flower_old( flower_id: int, player_id: uuid.UUID, db: Session 
         session.status = 2  # Complete
         for potion in [p.id for p in recipe.required_potions]:
             remove_potion_from_inventory_func(session.initial_player,potion, db)
+        player_uuids = [p.player_id for p in session.players]
+        for i in range(len(player_uuids)):
+            for j in range(i + 1, len(player_uuids)):
+                uuid1, uuid2 = utils.get_ordered_ids(player_uuids[i], player_uuids[j])
 
+                friendship = db.query(models.PlayerFriendship).filter_by(
+                    player1_id=uuid1,
+                    player2_id=uuid2
+                ).first()
+
+                if friendship:
+                    friendship.potions_together += 1
     db.commit()
     db.refresh(session)
     return _format_session_info(session, player.assigned_flower, db)

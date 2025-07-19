@@ -19,6 +19,9 @@ class PlayerLogin(BaseModel):
 class PlayerBase(BaseModel):
     name: Optional[str] = None
     profile_picture: int
+    class Config:
+        orm_mode = True
+
 
 class Player(PlayerBase):
     player_id: uuid.UUID
@@ -207,3 +210,16 @@ class TradeResponse(BaseModel):
 class TradeBoardResponse(BaseModel):
     trades: List[TradeResponse]
     total_count: int
+
+# Friends
+
+class FriendInfo(PlayerBase):
+    player_id: uuid.UUID
+    class Config:
+        orm_mode = True
+
+class FriendshipData(BaseModel):
+    friend: FriendInfo
+    potions_together: int
+    class Config:
+        orm_mode = True

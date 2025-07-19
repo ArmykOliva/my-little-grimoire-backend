@@ -44,13 +44,16 @@ session_flower_association = Table(
 )
 
 
-class PlayerFollower(Base):
-    __tablename__ = "player_followers"
+class PlayerFriendship(Base):
+    __tablename__ = "player_friendships"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    follower_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False)
-    followed_id = Column(Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False)
+    # Always store the smaller ID first for uniqueness
+    player1_id = Column(UUID(as_uuid=True), ForeignKey("players.player_id", ondelete="CASCADE"), nullable=False)
+    player2_id = Column(UUID(as_uuid=True), ForeignKey("players.player_id", ondelete="CASCADE"), nullable=False)
+
+    potions_together = Column(Integer, default=0, nullable=False)
 
 def random_name():
     return random.choice(["Alex", "Krystof", "Ben", "Maxi", "Heloisa"])

@@ -1,5 +1,7 @@
 import string
 import random
+import uuid
+
 from geopy.distance import geodesic
 from passlib.context import CryptContext
 
@@ -19,3 +21,5 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
+def get_ordered_ids(id1: uuid.UUID, id2: uuid.UUID):
+    return (id1, id2) if id1 < id2 else (id2, id1)
