@@ -2,6 +2,13 @@
 
 A FastAPI backend for a potion crafting game with session management, player inventory, and recipe system.
 
+<!-- Screenshots -->
+<p align="center">
+  <img src="screen1.jpeg" width="320" alt="Gameplay screen 1"/>
+  <img src="screen2.jpeg" width="320" alt="Gameplay screen 2"/>
+  <img src="screen3.jpeg" width="320" alt="Gameplay screen 3"/>
+</p>
+
 ## Tech Stack
 
 - **FastAPI**: Modern Python web framework
